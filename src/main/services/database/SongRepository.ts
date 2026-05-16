@@ -335,7 +335,30 @@ export function getMostPlayed(limit = 20): Song[] {
 
 export function searchSongs(query: string): Song[] {
   const db = getDatabase()
-  const like = `%${query}%`
+  const cleanQuery = query.trim().replace(/["]+/g, '')
+  if (!cleanQuery) return []
+
+  try {
+    // Try FTS5 first (super fast)
+    // We append * to the query for prefix matching
+    const rows = db.prepare(`
+      SELECT s.*, ar.name as artist_name, al.title as album_title
+      FROM songs s
+      JOIN songs_fts ON songs_fts.rowid = s.id
+      LEFT JOIN artists ar ON ar.id = s.artist_id
+      LEFT JOIN albums al ON al.id = s.album_id
+      WHERE songs_fts MATCH ?
+      ORDER BY rank
+      LIMIT 300
+    `).all(`${cleanQuery}*`) as SongRow[]
+    
+    if (rows.length > 0) return rows.map(rowToSong)
+  } catch (e) {
+    // Fallback if FTS5 fails or table doesn't exist
+  }
+
+  // Fallback to LIKE (slower but reliable)
+  const like = `%${cleanQuery}%`
   const rows = db
     .prepare(
       `${SONG_SELECT}

@@ -40,6 +40,22 @@ export function closeDatabase(): void {
   }
 }
 
+/**
+ * Transaction helper for node:sqlite DatabaseSync
+ */
+export function runInTransaction<T>(fn: () => T): T {
+  const d = getDatabase()
+  d.exec('BEGIN')
+  try {
+    const result = fn()
+    d.exec('COMMIT')
+    return result
+  } catch (e) {
+    d.exec('ROLLBACK')
+    throw e
+  }
+}
+
 // ─── Migrations ────────────────────────────────────────────────────────────────
 
 function runMigrations(): void {
@@ -54,6 +70,7 @@ function runMigrations(): void {
     migration002_indexes,
     migration003_playlist_ytid,
     migration004_downloads_persistence,
+    migration005_fts,
   ]
 
   for (let v = currentVersion; v < migrations.length; v++) {
@@ -170,6 +187,33 @@ function migration003_playlist_ytid(d: NodeSqliteDB): void {
     d.exec(`ALTER TABLE playlists ADD COLUMN yt_id TEXT;`)
   } catch (e) {
     // Column might already exist
+  }
+}
+
+function migration005_fts(d: NodeSqliteDB): void {
+  try {
+    // Create FTS5 table for fast searching
+    d.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS songs_fts USING fts5(
+        title,
+        artist_name,
+        album_title,
+        genre,
+        content='songs'
+      );
+    `)
+
+    // Populate FTS table
+    d.exec(`
+      INSERT INTO songs_fts(rowid, title, artist_name, album_title, genre)
+      SELECT s.id, s.title, ar.name, al.title, s.genre
+      FROM songs s
+      LEFT JOIN artists ar ON ar.id = s.artist_id
+      LEFT JOIN albums al ON al.id = s.album_id
+      WHERE NOT EXISTS (SELECT 1 FROM songs_fts WHERE rowid = s.id);
+    `)
+  } catch (e) {
+    console.error('FTS5 migration failed (might not be supported by this build):', e)
   }
 }
 

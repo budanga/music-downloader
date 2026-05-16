@@ -51,17 +51,24 @@ export function useLibrary() {
     if (!window.api?.on) return undefined
 
     // Subscribe to IPC events for real-time updates
+    // Debounced refresh for artists/albums to avoid IPC thrashing during bulk downloads
+    let refreshTimer: NodeJS.Timeout
+    const debouncedRefreshMetadata = () => {
+      clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(() => {
+        window.api.library.getArtists().then(setArtists)
+        window.api.library.getAlbums().then(setAlbums)
+      }, 1000)
+    }
+
     const unsubSongAdded = window.api.on.librarySongAdded((song) => {
       addSong(song as Song)
-      // Re-fetch artists and albums because the new song might have created them
-      window.api.library.getArtists().then(setArtists)
-      window.api.library.getAlbums().then(setAlbums)
+      debouncedRefreshMetadata()
     })
 
     const unsubSongDeleted = window.api.on.librarySongDeleted((id) => {
       removeSong(id)
-      window.api.library.getArtists().then(setArtists)
-      window.api.library.getAlbums().then(setAlbums)
+      debouncedRefreshMetadata()
     })
 
     const unsubProgress = window.api.on.downloadProgress((progress) => {

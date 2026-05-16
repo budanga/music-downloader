@@ -34,7 +34,7 @@ export function useAudioPlayer() {
     }
 
     // Build the URL with a cache-busting timestamp to prevent Howler's HTML5 audio node pooling from breaking when returning to the same song
-    const src = `music://${encodeURIComponent(currentSong.filePath)}?t=${Date.now()}`
+    const src = `music://${encodeURIComponent(currentSong.filePath)}`
 
     const howl = new Howl({
       src: [src],

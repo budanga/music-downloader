@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import Fuse from 'fuse.js'
+import { useDeferredValue } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { usePlayerStore } from '../store/playerStore'
 import { formatTime } from '../hooks/useAudioPlayer'
@@ -9,7 +9,8 @@ import { useToast } from '../components/ui/Toast'
 import { Modal } from '../components/ui/Modal'
 import type { Song, SortField, SortOrder } from '../../shared/types'
 
-const fuse_opts = { keys: ['title', 'artistName', 'albumTitle', 'genre'], threshold: 0.35 }
+// FTS search is handled in the main process
+const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true })
 
 const MusicNoteIcon = () => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -26,16 +27,29 @@ export default function SongsPage() {
   const [sortField, setSortField] = useState<SortField>('dateAdded')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
-  const fuse = useMemo(() => new Fuse(songs, fuse_opts), [songs])
+  const deferredQuery = useDeferredValue(query)
+  const [searchResults, setSearchResults] = useState<Song[] | null>(null)
+
+  // Use backend search when query changes
+  useEffect(() => {
+    if (!deferredQuery.trim()) {
+      setSearchResults(null)
+      return
+    }
+    window.api.library.search(deferredQuery).then(setSearchResults)
+  }, [deferredQuery])
 
   const filtered = useMemo<Song[]>(() => {
-    let list = query.trim() ? fuse.search(query).map((r) => r.item) : [...songs]
-    if (!query.trim()) {
+    const baseList = searchResults || songs
+    const list = [...baseList]
+    
+    // If not searching, apply the current sort
+    if (!deferredQuery.trim()) {
       list.sort((a, b) => {
         let av: string | number = '', bv: string | number = ''
-        if (sortField === 'title') { av = a.title.toLowerCase(); bv = b.title.toLowerCase() }
-        if (sortField === 'artist') { av = a.artistName?.toLowerCase() ?? ''; bv = b.artistName?.toLowerCase() ?? '' }
-        if (sortField === 'album') { av = a.albumTitle?.toLowerCase() ?? ''; bv = b.albumTitle?.toLowerCase() ?? '' }
+        if (sortField === 'title') return sortOrder === 'asc' ? collator.compare(a.title, b.title) : collator.compare(b.title, a.title)
+        if (sortField === 'artist') return sortOrder === 'asc' ? collator.compare(a.artistName ?? '', b.artistName ?? '') : collator.compare(b.artistName ?? '', a.artistName ?? '')
+        if (sortField === 'album') return sortOrder === 'asc' ? collator.compare(a.albumTitle ?? '', b.albumTitle ?? '') : collator.compare(b.albumTitle ?? '', a.albumTitle ?? '')
         if (sortField === 'duration') { av = a.duration; bv = b.duration }
         if (sortField === 'dateAdded') { av = a.dateAdded; bv = b.dateAdded }
         if (sortField === 'playCount') { av = a.playCount; bv = b.playCount }
@@ -43,7 +57,7 @@ export default function SongsPage() {
       })
     }
     return list
-  }, [songs, query, fuse, sortField, sortOrder])
+  }, [songs, searchResults, deferredQuery, sortField, sortOrder])
 
   const parentRef = useRef<HTMLDivElement>(null)
   const rowVirtualizer = useVirtualizer({
