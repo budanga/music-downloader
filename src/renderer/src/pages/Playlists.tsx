@@ -3,41 +3,25 @@ import { useLibraryStore } from '../store/libraryStore'
 import { usePlayerStore } from '../store/playerStore'
 import { useToast } from '../components/ui/Toast'
 import { Modal } from '../components/ui/Modal'
+import { CreatePlaylistModal } from '../components/ui/CreatePlaylistModal'
 import type { Playlist, PlaylistSong } from '../../shared/types'
 import { SPECIAL_PLAYLISTS } from '../../../shared/constants'
 import HeartButton, { HeartIcon } from '../components/ui/HeartButton'
 
 export default function PlaylistsPage() {
-  const { playlists, addPlaylist, removePlaylist } = useLibraryStore()
+  const { playlists, removePlaylist } = useLibraryStore()
   const { setQueue } = usePlayerStore()
   const { show } = useToast()
 
   const [selected, setSelected] = useState<Playlist | null>(null)
   const [songs, setSongs] = useState<PlaylistSong[]>([])
   const [creating, setCreating] = useState(false)
-  const [newName, setNewName] = useState('')
   const [playlistToDelete, setPlaylistToDelete] = useState<Playlist | null>(null)
 
   const openPlaylist = async (pl: Playlist) => {
     setSelected(pl)
     const s = await window.api.playlists.getSongs(pl.id)
     setSongs(s)
-  }
-
-  const createPlaylist = async () => {
-    const name = newName.trim()
-    if (!name) return
-    
-    if (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-      show('A playlist with this name already exists', 'error')
-      return
-    }
-
-    const pl = await window.api.playlists.create(name)
-    addPlaylist(pl)
-    setCreating(false)
-    setNewName('')
-    show(`Playlist "${pl.name}" created`, 'success')
   }
 
   const deletePlaylist = async () => {
@@ -129,21 +113,6 @@ export default function PlaylistsPage() {
         <button className="btn-primary" onClick={() => setCreating(true)}>+ New Playlist</button>
       </div>
       <div className="page-body">
-        {creating && (
-          <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-            <input
-              className="input"
-              placeholder="Playlist name…"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && createPlaylist()}
-              autoFocus
-              style={{ maxWidth: 320 }}
-            />
-            <button className="btn-primary" onClick={createPlaylist}>Create</button>
-            <button className="btn-ghost" onClick={() => setCreating(false)}>Cancel</button>
-          </div>
-        )}
         {playlists.length === 0
           ? <div className="empty-state">
               <div className="empty-state__icon">🎶</div>
@@ -180,6 +149,13 @@ export default function PlaylistsPage() {
             </div>
         }
       </div>
+
+      {creating && (
+        <CreatePlaylistModal 
+          onClose={() => setCreating(false)}
+        />
+      )}
+
       {playlistToDelete && (
         <Modal
           title="Delete Playlist"

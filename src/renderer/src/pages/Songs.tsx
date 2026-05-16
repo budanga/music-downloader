@@ -7,6 +7,7 @@ import { usePlayerStore } from '../store/playerStore'
 import { formatTime } from '../hooks/useAudioPlayer'
 import { useToast } from '../components/ui/Toast'
 import { Modal } from '../components/ui/Modal'
+import { CreatePlaylistModal } from '../components/ui/CreatePlaylistModal'
 import type { Song, SortField, SortOrder, Playlist } from '../../shared/types'
 import HeartButton from '../components/ui/HeartButton'
 import { SPECIAL_PLAYLISTS } from '../../../shared/constants'
@@ -84,7 +85,6 @@ export default function SongsPage() {
   const [deletePrompt, setDeletePrompt] = useState(false)
   const [playlistModal, setPlaylistModal] = useState(false)
   const [newPlaylistPrompt, setNewPlaylistPrompt] = useState(false)
-  const [newPlaylistName, setNewPlaylistName] = useState('')
   
   // Multi-selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -174,29 +174,6 @@ export default function SongsPage() {
     show(`Added to ${p.name}`, 'success')
     setContextMenu(null)
     setPlaylistModal(false)
-  }
-
-  const createPlaylistAndAdd = async () => {
-    const name = newPlaylistName.trim()
-    if (!name) return
-    
-    // Check if name exists
-    if (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) {
-      show('A playlist with this name already exists', 'error')
-      return
-    }
-
-    try {
-      const p = await window.api.playlists.create(name)
-      useLibraryStore.getState().addPlaylist(p)
-      for (const id of selectedIds) window.api.playlists.addSong(p.id, id)
-      show(`Created and added to ${name}`, 'success')
-      setNewPlaylistPrompt(false)
-      setNewPlaylistName('')
-      setContextMenu(null)
-    } catch (e) {
-      console.error(e)
-    }
   }
 
   if (isLoading) return <div className="empty-state"><div className="spin" style={{ fontSize: 32 }}>⟳</div></div>
@@ -406,23 +383,13 @@ export default function SongsPage() {
       )}
 
       {newPlaylistPrompt && (
-        <Modal
-          title="New Playlist"
-          description="Enter a name for your new playlist."
-          confirmText="Create"
-          onConfirm={createPlaylistAndAdd}
-          onCancel={() => { setNewPlaylistPrompt(false); setNewPlaylistName(''); }}
-        >
-          <input
-            className="input"
-            autoFocus
-            placeholder="Playlist name..."
-            value={newPlaylistName}
-            onChange={(e) => setNewPlaylistName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && createPlaylistAndAdd()}
-            style={{ marginTop: 12 }}
-          />
-        </Modal>
+        <CreatePlaylistModal
+          onClose={() => setNewPlaylistPrompt(false)}
+          onCreated={(playlistId) => {
+            for (const id of selectedIds) window.api.playlists.addSong(playlistId, id)
+            show(`Created and added songs`, 'success')
+          }}
+        />
       )}
 
 

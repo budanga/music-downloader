@@ -121,14 +121,20 @@ export default function DownloadsPage() {
   const done   = items.filter((i) => ['completed', 'failed', 'cancelled'].includes(i.status))
 
   const startDownload = async () => {
-    if (!url.trim()) return
-    if (!url.includes('youtube.com') && !url.includes('youtu.be')) {
+    const trimmedUrl = url.trim()
+    if (!trimmedUrl) return
+
+    // Regex for YouTube and YouTube Music URLs (videos and playlists)
+    const ytRegex = /^(https?:\/\/)?(www\.|music\.)?(youtube\.com|youtu\.be)\/(watch\?v=|playlist\?list=|v\/|embed\/)?([a-zA-Z0-9_-]{11}|[a-zA-Z0-9_-]{34})(&.*)?$/
+    
+    if (!ytRegex.test(trimmedUrl)) {
       show('Please enter a valid YouTube or YouTube Music URL', 'error')
       return
     }
+
     setIsStarting(true)
     try {
-      const result = await window.api.downloads.start({ url: url.trim(), format })
+      const result = await window.api.downloads.start({ url: trimmedUrl, format })
       if (result.success) {
         setUrl('')
         show('Download started!', 'success')

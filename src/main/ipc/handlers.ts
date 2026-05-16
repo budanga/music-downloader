@@ -97,8 +97,21 @@ function registerPlaylistHandlers(): void {
   ipcMain.handle(IPC.PLAYLIST_LIST, () => getAllPlaylists())
   ipcMain.handle(IPC.PLAYLIST_GET, (_e, id: string) => getPlaylistById(id))
 
-  ipcMain.handle(IPC.PLAYLIST_CREATE, (_e, name: string, description?: string) => {
-    return createPlaylist(name, description)
+  ipcMain.handle(IPC.PLAYLIST_CREATE, (_e, name: string, description?: string, thumbnail?: string) => {
+    // Basic validation
+    if (!name || name.trim().length === 0) {
+      throw new Error('Playlist name is required')
+    }
+
+    // Security: Limit thumbnail size and type if provided
+    if (thumbnail) {
+      // Check if it's a valid data URL and not too huge (e.g. 10MB limit on base64 string)
+      if (!thumbnail.startsWith('data:image/') || thumbnail.length > 15 * 1024 * 1024) {
+        throw new Error('Invalid playlist thumbnail')
+      }
+    }
+
+    return createPlaylist(name.trim(), description, thumbnail)
   })
 
   ipcMain.handle(IPC.PLAYLIST_UPDATE, (_e, id: string, updates: { name?: string; description?: string }) => {
@@ -134,6 +147,12 @@ function registerPlaylistHandlers(): void {
 function registerDownloadHandlers(): void {
   ipcMain.handle(IPC.DOWNLOAD_START, async (_e, request: DownloadRequest) => {
     try {
+      // Server-side URL validation
+      const ytRegex = /^(https?:\/\/)?(www\.|music\.)?(youtube\.com|youtu\.be)\/(watch\?v=|playlist\?list=|v\/|embed\/)?([a-zA-Z0-9_-]{11}|[a-zA-Z0-9_-]{34})(&.*)?$/
+      if (!request.url || !ytRegex.test(request.url)) {
+        return { success: false, error: 'Invalid YouTube URL' }
+      }
+
       const ids = await downloadManager.enqueue(request)
       return { success: true, ids }
     } catch (e) {

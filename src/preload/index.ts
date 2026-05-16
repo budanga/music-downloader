@@ -29,7 +29,7 @@ const api = {
   playlists: {
     list: () => ipcRenderer.invoke(IPC.PLAYLIST_LIST),
     get: (id: string) => ipcRenderer.invoke(IPC.PLAYLIST_GET, id),
-    create: (name: string, description?: string) => ipcRenderer.invoke(IPC.PLAYLIST_CREATE, name, description),
+    create: (name: string, description?: string, thumbnail?: string) => ipcRenderer.invoke(IPC.PLAYLIST_CREATE, name, description, thumbnail),
     update: (id: string, updates: object) => ipcRenderer.invoke(IPC.PLAYLIST_UPDATE, id, updates),
     delete: (id: string) => ipcRenderer.invoke(IPC.PLAYLIST_DELETE, id),
     getSongs: (playlistId: string) => ipcRenderer.invoke(IPC.PLAYLIST_GET_SONGS, playlistId),
