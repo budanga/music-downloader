@@ -1,7 +1,8 @@
 import { useEffect, useCallback } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useDownloadStore } from '../store/downloadStore'
-import type { Song } from '../../shared/types'
+import { usePlayerStore } from '../store/playerStore'
+import type { Song, Playlist } from '../../shared/types'
 
 /**
  * useLibrary — loads the library from the main process and subscribes
@@ -71,12 +72,20 @@ export function useLibrary() {
       debouncedRefreshMetadata()
     })
 
+    const unsubSongUpdated = window.api.on.librarySongUpdated((song) => {
+      updateSong(song as Song)
+      usePlayerStore.getState().updateSongMetadata(song as Song)
+      // Also refresh playlists count
+      window.api.playlists.list().then(setPlaylists)
+    })
+
     const unsubProgress = window.api.on.downloadProgress((progress) => {
       updateProgress(progress)
     })
 
     const unsubCompleted = window.api.on.downloadCompleted(({ song }) => {
       updateSong(song as Song)
+      usePlayerStore.getState().updateSongMetadata(song as Song)
     })
 
     const unsubPlaylistAdded = window.api.on.libraryPlaylistAdded((playlist) => {
@@ -90,12 +99,13 @@ export function useLibrary() {
     return () => {
       unsubSongAdded()
       unsubSongDeleted()
+      unsubSongUpdated()
       unsubProgress()
       unsubCompleted()
       unsubPlaylistAdded()
       unsubPlaylistDeleted()
     }
-  }, [refresh, addSong, removeSong, updateSong, updateProgress, addPlaylist, removePlaylist])
+  }, [refresh, addSong, removeSong, updateSong, updateProgress, addPlaylist, removePlaylist, setArtists, setAlbums, setPlaylists])
 
   return { refresh }
 }

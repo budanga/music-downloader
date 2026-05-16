@@ -42,6 +42,7 @@ interface PlayerState {
   setCurrentTime: (t: number) => void
   setDuration: (d: number) => void
   setIsPlaying: (v: boolean) => void
+  updateSongMetadata: (song: Song) => void
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -181,4 +182,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setCurrentTime: (t) => set({ currentTime: t }),
   setDuration: (d) => set({ duration: d }),
   setIsPlaying: (v) => set({ isPlaying: v }),
+  updateSongMetadata: (song) => {
+    set((s) => {
+      const updates: Partial<PlayerState> = {}
+      if (s.currentSong?.id === song.id) {
+        updates.currentSong = { ...s.currentSong, ...song }
+      }
+      const index = s.queue.findIndex(x => x.id === song.id)
+      if (index !== -1) {
+        const newQueue = [...s.queue]
+        newQueue[index] = { ...newQueue[index], ...song }
+        updates.queue = newQueue
+      }
+      return updates
+    })
+  },
 }))

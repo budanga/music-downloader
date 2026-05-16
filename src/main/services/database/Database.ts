@@ -71,6 +71,7 @@ function runMigrations(): void {
     migration003_playlist_ytid,
     migration004_downloads_persistence,
     migration005_fts,
+    migration006_liked_songs,
   ]
 
   for (let v = currentVersion; v < migrations.length; v++) {
@@ -215,5 +216,13 @@ function migration005_fts(d: NodeSqliteDB): void {
   } catch (e) {
     console.error('FTS5 migration failed (might not be supported by this build):', e)
   }
+}
+
+function migration006_liked_songs(d: NodeSqliteDB): void {
+  const now = Date.now()
+  d.prepare(
+    `INSERT OR IGNORE INTO playlists (id, name, description, thumbnail, yt_id, date_created, date_modified)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run('liked-songs', 'Liked Songs', 'Your favorite songs', null, null, now, now)
 }
 
