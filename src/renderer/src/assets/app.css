@@ -309,15 +309,28 @@ img { display: block; }
   white-space: nowrap;
 }
 .player-bar__artist { color: var(--text-secondary); font-size: 12px; }
-.player-bar__fav {
-  flex-shrink: 0;
+.player-bar__fav.active { color: var(--accent); }
+
+.heart-btn {
   color: var(--text-muted);
   transition: color 0.2s, transform 0.2s var(--ease-spring);
-  padding: 4px;
-  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-.player-bar__fav:hover { color: var(--accent-light); }
-.player-bar__fav.active { color: var(--accent); }
+.heart-btn:hover { color: var(--accent-light); transform: scale(1.1); }
+.heart-btn.active { color: var(--accent); }
+
+.liked-songs-art {
+  background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  box-shadow: inset 0 0 40px rgba(108,99,255,0.1);
+  width: 100%;
+  height: 100%;
+}
 
 /* Player controls */
 .player-controls {
