@@ -33,8 +33,10 @@ export function useAudioPlayer() {
       rafRef.current = null
     }
 
-    // Build the URL with a cache-busting timestamp to prevent Howler's HTML5 audio node pooling from breaking when returning to the same song
-    const src = `music://${encodeURIComponent(currentSong.filePath)}`
+    // Use a virtual host 'library' for proper Range request support.
+    // NOTE: No cache-busting timestamp here — adding ?t=... changes the URL on every seek,
+    // which causes Howler to reload the entire audio file from position 0.
+    const src = `music://library/${encodeURIComponent(currentSong.filePath)}`
 
     const howl = new Howl({
       src: [src],
@@ -87,7 +89,10 @@ export function useAudioPlayer() {
     }
 
     return () => {
-      howl.unload()
+      if (howl) {
+        howl.stop()
+        howl.unload()
+      }
       if (howlRef.current === howl) {
         howlRef.current = null
       }
@@ -126,10 +131,26 @@ export function useAudioPlayer() {
 
   // ─── External Seek trigger ────────────────────────────────────────────────
   useEffect(() => {
-    if (store.seekToTarget !== null) {
-      howlRef.current?.seek(store.seekToTarget)
-      setCurrentTime(store.seekToTarget)
-      store.clearSeekToTarget()
+    if (store.seekToTarget === null) return
+
+    const target = store.seekToTarget
+    store.clearSeekToTarget()
+    setCurrentTime(target)
+
+    const howl = howlRef.current
+    if (!howl) return
+
+    // Howler's howl.seek() can internally call audio.load() in some browsers/setups,
+    // resetting playback to 0:00. We bypass it by seeking directly on the underlying
+    // HTMLAudioElement that Howler manages internally.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const sound = (howl as any)._sounds?.[0]
+    const audioNode: HTMLAudioElement | undefined = sound?._node
+
+    if (audioNode) {
+      audioNode.currentTime = target
+    } else {
+      howl.seek(target)
     }
   }, [store.seekToTarget, setCurrentTime, store])
 

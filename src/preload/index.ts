@@ -99,6 +99,11 @@ const api = {
       ipcRenderer.on(IPC.LIBRARY_SONG_DELETED, handler)
       return () => ipcRenderer.removeListener(IPC.LIBRARY_SONG_DELETED, handler)
     },
+    librarySongUpdated: (cb: (song: object) => void) => {
+      const handler = (_e: Electron.IpcRendererEvent, song: object) => cb(song)
+      ipcRenderer.on(IPC.LIBRARY_SONG_UPDATED, handler)
+      return () => ipcRenderer.removeListener(IPC.LIBRARY_SONG_UPDATED, handler)
+    },
     libraryPlaylistAdded: (cb: (playlist: object) => void) => {
       const handler = (_e: Electron.IpcRendererEvent, playlist: object) => cb(playlist)
       ipcRenderer.on(IPC.LIBRARY_PLAYLIST_ADDED, handler)
