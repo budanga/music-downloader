@@ -11,7 +11,7 @@ import { getAllSettings } from './services/database/SettingsRepository'
 
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, stream: true } }
+  { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, stream: true, standard: true } }
 ])
 
 let mainWindow: BrowserWindow | null = null
@@ -20,22 +20,29 @@ let tray: Tray | null = null
 // ─── Custom Protocol for Local Audio Files ────────────────────────────────────
 
 function registerMusicProtocol(): void {
-  // Use registerFileProtocol so Chromium handles HTTP Range requests and streaming natively
+  // Use registerFileProtocol which natively handles Range requests for media streaming in C++.
+  // net.fetch() with file:// URLs does not properly respond with 206 Partial Content.
   protocol.registerFileProtocol('music', (request, callback) => {
-    let encodedPath = request.url.replace('music://', '')
-    // Strip cache-busting query parameters if present
-    const qIndex = encodedPath.indexOf('?')
-    if (qIndex !== -1) {
-      encodedPath = encodedPath.substring(0, qIndex)
-    }
-    // Remove trailing slash that Electron sometimes adds
-    const cleanEncodedPath = encodedPath.endsWith('/') ? encodedPath.slice(0, -1) : encodedPath
-    
     try {
-      const filePath = decodeURIComponent(cleanEncodedPath)
+      const url = new URL(request.url)
+      
+      // We expect music://library/C:/path/to/file.mp3
+      if (url.host !== 'library') {
+        callback({ error: -2 }) // FAILED
+        return
+      }
+
+      let filePath = decodeURIComponent(url.pathname)
+      
+      // On Windows, the pathname starts with /C:/..., so we remove the leading slash
+      if (process.platform === 'win32' && filePath.startsWith('/')) {
+        filePath = filePath.slice(1)
+      }
+
       callback({ path: filePath })
     } catch (e) {
-      callback({ error: -2 }) // net::ERR_FAILED
+      console.error('[Protocol] Error handling music request:', e)
+      callback({ error: -6 }) // FILE_NOT_FOUND
     }
   })
 }
@@ -55,7 +62,7 @@ function createWindow(): void {
     icon: join(__dirname, '../../resources/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: true,
+      sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
     },

@@ -10,6 +10,7 @@ import type { DownloadRequest } from '../../../shared/download.types'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
+import { SPECIAL_PLAYLISTS } from '../../../shared/constants'
 
 export function registerAllIpcHandlers(): void {
   registerLibraryHandlers()
@@ -65,8 +66,21 @@ function registerLibraryHandlers(): void {
   ipcMain.handle(IPC.LIBRARY_TOGGLE_FAVORITE, (_e, id: string) => {
     const song = getSongById(id)
     if (!song) return null
-    updateSong(id, { isFavorite: !song.isFavorite })
-    return getSongById(id)
+    
+    const newStatus = !song.isFavorite
+    updateSong(id, { isFavorite: newStatus })
+    
+    if (newStatus) {
+      addSongToPlaylist(SPECIAL_PLAYLISTS.LIKED_SONGS, id)
+    } else {
+      removeSongFromPlaylist(SPECIAL_PLAYLISTS.LIKED_SONGS, id)
+    }
+    
+    const updated = getSongById(id)
+    if (updated) {
+      _e.sender.send(IPC.LIBRARY_SONG_UPDATED, updated)
+    }
+    return updated
   })
 
   ipcMain.handle(IPC.LIBRARY_INCREMENT_PLAY_COUNT, (_e, id: string) => {
