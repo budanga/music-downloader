@@ -1,20 +1,77 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { usePlayerStore } from '../store/playerStore'
-import type { Album } from '../../shared/types'
+import type { Album, Song, Playlist } from '../../shared/types'
 import { formatTime } from '../hooks/useAudioPlayer'
+import HeartButton from '../components/ui/HeartButton'
+import { useToast } from '../components/ui/Toast'
+import { Modal } from '../components/ui/Modal'
+import { SPECIAL_PLAYLISTS } from '../../../shared/constants'
 
 export default function AlbumsPage() {
-  const { albums, songs } = useLibraryStore()
-  const { setQueue, currentSong } = usePlayerStore()
+  const { albums, songs, playlists } = useLibraryStore()
+  const { setQueue, currentSong, togglePlay, isPlaying } = usePlayerStore()
+  const { show } = useToast()
 
   const [selected, setSelected] = useState<Album | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number, y: number, song: Song } | null>(null)
+  const [playlistModal, setPlaylistModal] = useState(false)
+  const [newPlaylistPrompt, setNewPlaylistPrompt] = useState(false)
+  const [newPlaylistName, setNewPlaylistName] = useState('')
 
   const playAlbum = (albumId: string) => {
     const albumSongs = songs
       .filter((s) => s.albumId === albumId)
       .sort((a, b) => (a.trackNumber ?? 999) - (b.trackNumber ?? 999))
     if (albumSongs.length > 0) setQueue(albumSongs, 0)
+  }
+
+  const handleContextMenu = (e: React.MouseEvent, song: Song) => {
+    e.preventDefault()
+    let x = e.clientX
+    let y = e.clientY
+    if (window.innerWidth - x < 200) x = window.innerWidth - 200
+    if (window.innerHeight - y < 250) y = window.innerHeight - 250
+    setContextMenu({ x, y, song })
+  }
+
+  useEffect(() => {
+    const closeMenu = () => setContextMenu(null)
+    window.addEventListener('click', closeMenu)
+    window.addEventListener('contextmenu', closeMenu)
+    return () => {
+      window.removeEventListener('click', closeMenu)
+      window.removeEventListener('contextmenu', closeMenu)
+    }
+  }, [])
+
+  const addToPlaylist = (p: Playlist, songId: string) => {
+    window.api.playlists.addSong(p.id, songId)
+    show(`Added to ${p.name}`, 'success')
+    setContextMenu(null)
+    setPlaylistModal(false)
+  }
+
+  const createPlaylistAndAdd = async () => {
+    const name = newPlaylistName.trim()
+    if (!name || !contextMenu?.song) return
+    
+    if (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      show('A playlist with this name already exists', 'error')
+      return
+    }
+
+    try {
+      const p = await window.api.playlists.create(name)
+      useLibraryStore.getState().addPlaylist(p)
+      window.api.playlists.addSong(p.id, contextMenu.song.id)
+      show(`Created and added to ${name}`, 'success')
+      setNewPlaylistPrompt(false)
+      setNewPlaylistName('')
+      setContextMenu(null)
+    } catch (e) {
+      console.error(e)
+    }
   }
 
   if (albums.length === 0) return (
@@ -55,7 +112,10 @@ export default function AlbumsPage() {
               return (
                 <div
                   key={song.id}
-                  onClick={() => setQueue(albumSongs, i)}
+                  onClick={() => {
+                    if (isActive) togglePlay()
+                    else setQueue(albumSongs, i)
+                  }}
                   className={isActive ? 'playing' : ''}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 14,
@@ -65,11 +125,19 @@ export default function AlbumsPage() {
                   }}
                   onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'var(--bg-elevated)' }}
                   onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
+                  onContextMenu={(e) => handleContextMenu(e, song)}
                 >
-                  <span style={{ color: 'var(--text-muted)', fontSize: 13, minWidth: 28 }}>{song.trackNumber || i + 1}</span>
-                  <div style={{ flex: 1 }}>
-                    <div className="song-row__title" style={{ color: isActive ? 'var(--accent-light)' : undefined }}>{song.title}</div>
-                    <div className="song-row__artist">{song.artistName}</div>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13, minWidth: 28 }}>{isActive && isPlaying ? '▶' : song.trackNumber || i + 1}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="song-row__title" style={{ color: isActive ? 'var(--accent-light)' : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</div>
+                      <HeartButton
+                        isFavorite={song.isFavorite}
+                        onClick={(e) => { e.stopPropagation(); window.api.library.toggleFavorite(song.id) }}
+                        size={16}
+                      />
+                    </div>
+                    <div className="song-row__artist" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.artistName}</div>
                   </div>
                   <div className="song-row__muted">{formatTime(song.duration)}</div>
                 </div>
@@ -77,6 +145,79 @@ export default function AlbumsPage() {
             })
         }
       </div>
+
+      {contextMenu && (
+        <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
+          <div className="context-menu__item" onClick={() => {
+            usePlayerStore.getState().playNext(contextMenu.song);
+            show(`Playing next`, 'success');
+            setContextMenu(null);
+          }}>
+            🎵 Play next
+          </div>
+          <div className="context-menu__sep"></div>
+          <div style={{ padding: '4px 12px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Add to Playlist</div>
+          <div className="context-menu__item" onClick={() => {
+            setNewPlaylistPrompt(true);
+            setContextMenu(null);
+          }}>
+            + New Playlist...
+          </div>
+          {playlists.filter(p => p.id !== SPECIAL_PLAYLISTS.LIKED_SONGS).slice(0, 5).map(p => (
+            <div key={p.id} className="context-menu__item" onClick={() => addToPlaylist(p, contextMenu.song.id)}>
+              • {p.name}
+            </div>
+          ))}
+          {playlists.filter(p => p.id !== SPECIAL_PLAYLISTS.LIKED_SONGS).length > 5 && (
+            <div className="context-menu__item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={() => { setPlaylistModal(true); setContextMenu(null); }}>
+              <span>Other</span>
+              <span style={{ fontSize: 16, opacity: 0.5 }}>&gt;</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {playlistModal && contextMenu?.song && (
+        <Modal
+          title="Add to Playlist"
+          description={`Select a playlist for "${contextMenu.song.title}"`}
+          onCancel={() => setPlaylistModal(false)}
+        >
+          <div className="playlist-selection-grid" style={{ maxHeight: 300, overflowY: 'auto', marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {playlists.filter(p => p.id !== SPECIAL_PLAYLISTS.LIKED_SONGS).map(p => (
+              <div
+                key={p.id}
+                className="context-menu__item"
+                style={{ borderRadius: 8, padding: '12px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}
+                onClick={() => addToPlaylist(p, contextMenu.song.id)}
+              >
+                <div style={{ fontSize: 20 }}>🎶</div>
+                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {newPlaylistPrompt && (
+        <Modal
+          title="New Playlist"
+          description="Enter a name for your new playlist."
+          confirmText="Create"
+          onConfirm={createPlaylistAndAdd}
+          onCancel={() => { setNewPlaylistPrompt(false); setNewPlaylistName(''); }}
+        >
+          <input
+            className="input"
+            autoFocus
+            placeholder="Playlist name..."
+            value={newPlaylistName}
+            onChange={(e) => setNewPlaylistName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && createPlaylistAndAdd()}
+            style={{ marginTop: 12 }}
+          />
+        </Modal>
+      )}
     </div>
   )
 
@@ -95,7 +236,7 @@ export default function AlbumsPage() {
               }
               <div className="card__title">{album.title}</div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 4 }}>
-                <div className="card__sub" style={{ margin: 0, paddingRight: 8 }}>{album.artistName} · {album.songCount} song{album.songCount !== 1 ? 's' : ''}</div>
+                <div className="card__sub" style={{ margin: 0, paddingRight: 8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{album.artistName} · {album.songCount} song{album.songCount !== 1 ? 's' : ''}</div>
                 <button 
                   className="btn-icon" 
                   style={{ background: 'var(--accent)', color: 'white', borderRadius: '50%', flexShrink: 0 }}

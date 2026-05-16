@@ -7,7 +7,9 @@ import { usePlayerStore } from '../store/playerStore'
 import { formatTime } from '../hooks/useAudioPlayer'
 import { useToast } from '../components/ui/Toast'
 import { Modal } from '../components/ui/Modal'
-import type { Song, SortField, SortOrder } from '../../shared/types'
+import type { Song, SortField, SortOrder, Playlist } from '../../shared/types'
+import HeartButton from '../components/ui/HeartButton'
+import { SPECIAL_PLAYLISTS } from '../../../shared/constants'
 
 // FTS search is handled in the main process
 const collator = new Intl.Collator('en', { sensitivity: 'base', numeric: true })
@@ -20,7 +22,7 @@ const MusicNoteIcon = () => (
 
 export default function SongsPage() {
   const { songs, playlists, isLoading } = useLibraryStore()
-  const { currentSong, setQueue, isPlaying, togglePlay, playNext } = usePlayerStore()
+  const { currentSong, setQueue, isPlaying, togglePlay } = usePlayerStore()
   const { show } = useToast()
 
   const [query, setQuery] = useState('')
@@ -80,6 +82,9 @@ export default function SongsPage() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, song: Song } | null>(null)
   const [deletePrompt, setDeletePrompt] = useState(false)
+  const [playlistModal, setPlaylistModal] = useState(false)
+  const [newPlaylistPrompt, setNewPlaylistPrompt] = useState(false)
+  const [newPlaylistName, setNewPlaylistName] = useState('')
   
   // Multi-selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -113,7 +118,7 @@ export default function SongsPage() {
   }
 
   const deleteMultiple = async () => {
-    if (!confirm(`¿Estás seguro que deseas eliminar ${selectedIds.size} canciones de tu biblioteca?`)) return
+    if (!confirm(`Are you sure you want to delete ${selectedIds.size} songs from your library?`)) return
     
     for (const id of selectedIds) {
       usePlayerStore.getState().removeBySongId(id)
@@ -128,7 +133,7 @@ export default function SongsPage() {
 
     window.api.library.getArtists().then(useLibraryStore.getState().setArtists)
     window.api.library.getAlbums().then(useLibraryStore.getState().setAlbums)
-       show(`${selectedIds.size} canciones eliminadas`, 'success')
+       show(`${selectedIds.size} songs deleted`, 'success')
     setSelectedIds(new Set())
     setDeletePrompt(false)
   }
@@ -164,7 +169,41 @@ export default function SongsPage() {
     </div>
   )
 
+  const addToPlaylist = (p: Playlist) => {
+    for (const id of selectedIds) window.api.playlists.addSong(p.id, id)
+    show(`Added to ${p.name}`, 'success')
+    setContextMenu(null)
+    setPlaylistModal(false)
+  }
+
+  const createPlaylistAndAdd = async () => {
+    const name = newPlaylistName.trim()
+    if (!name) return
+    
+    // Check if name exists
+    if (playlists.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+      show('A playlist with this name already exists', 'error')
+      return
+    }
+
+    try {
+      const p = await window.api.playlists.create(name)
+      useLibraryStore.getState().addPlaylist(p)
+      for (const id of selectedIds) window.api.playlists.addSong(p.id, id)
+      show(`Created and added to ${name}`, 'success')
+      setNewPlaylistPrompt(false)
+      setNewPlaylistName('')
+      setContextMenu(null)
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
   if (isLoading) return <div className="empty-state"><div className="spin" style={{ fontSize: 32 }}>⟳</div></div>
+
+  const selectionPlaylists = playlists.filter(p => p.id !== SPECIAL_PLAYLISTS.LIKED_SONGS)
+  const visiblePlaylists = selectionPlaylists.slice(0, 5)
+  const hasMorePlaylists = selectionPlaylists.length > 5
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -175,14 +214,14 @@ export default function SongsPage() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              Download Songs
+              Download Music
             </Link>
             <button className="btn-ghost" onClick={async () => {
               const settings = await window.api.settings.getAll()
               const path = settings.downloadPath || await window.api.system.getDefaultDownloadPath()
               window.api.system.openFile(path)
             }}>
-              📁 Open Folder
+              📁 Folder
             </button>
         </div>
         <div className="search-bar">
@@ -262,8 +301,14 @@ export default function SongsPage() {
                         ? <img src={song.thumbnail} alt="" className="song-row__art" />
                         : <div className="song-row__art-placeholder"><MusicNoteIcon /></div>
                       }
-                      <div style={{ minWidth: 0 }}>
-                        <div className="song-row__title" style={{ color: isActive ? 'var(--accent-light)' : undefined }}>{song.title}</div>
+                      <div style={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div className="song-row__title" style={{ color: isActive ? 'var(--accent-light)' : undefined, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.title}</div>
+                        <HeartButton
+                          isFavorite={song.isFavorite}
+                          onClick={(e) => { e.stopPropagation(); window.api.library.toggleFavorite(song.id) }}
+                          size={16}
+                          className="heart-on-hover"
+                        />
                       </div>
                     </div>
                     <div className="song-row__artist" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{song.artistName ?? '—'}</div>
@@ -273,7 +318,7 @@ export default function SongsPage() {
                     <button
                       className="btn-icon"
                       onClick={(e) => { e.stopPropagation(); handleContextMenu(e, song); }}
-                      title="Opciones"
+                      title="Options"
                       style={{ color: 'var(--text-muted)' }}
                     >
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -289,58 +334,95 @@ export default function SongsPage() {
       }
 
       {contextMenu && (
-        <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y, maxHeight: 350, overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y, maxHeight: 450, overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
           <div className="context-menu__item" onClick={() => {
             const songsToPlay = Array.from(selectedIds).map(id => filtered.find(s => s.id === id)!).filter(Boolean);
             [...songsToPlay].reverse().forEach(s => usePlayerStore.getState().playNext(s));
-            show(`Reproduciendo a continuación`, 'success');
+            show(`Playing next`, 'success');
             setContextMenu(null);
           }}>
-            🎵 Reproducir a continuación ({selectedIds.size})
+            🎵 Play next ({selectedIds.size})
           </div>
 
           <div className="context-menu__sep"></div>
-          <div style={{ padding: '4px 12px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Agregar a Playlist</div>
+          <div style={{ padding: '4px 12px', fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Add to Playlist</div>
           <div className="context-menu__item" onClick={() => {
-            const name = prompt('Nombre de la nueva playlist:')
-            if (name) {
-              window.api.playlists.create(name).then(p => {
-                useLibraryStore.getState().addPlaylist(p)
-                for (const id of selectedIds) window.api.playlists.addSong(p.id, id)
-                show(`Añadidas a ${name}`, 'success')
-              }).catch(console.error)
-            }
-            setContextMenu(null)
+            setNewPlaylistPrompt(true);
+            setContextMenu(null);
           }}>
-            + Nueva Playlist...
+            + New Playlist...
           </div>
-          {playlists.map(p => (
-            <div key={p.id} className="context-menu__item" onClick={() => {
-              for (const id of selectedIds) window.api.playlists.addSong(p.id, id)
-              show(`Añadidas a ${p.name}`, 'success')
-              setContextMenu(null)
-            }}>
+          {visiblePlaylists.map(p => (
+            <div key={p.id} className="context-menu__item" onClick={() => addToPlaylist(p)}>
               • {p.name}
             </div>
           ))}
+          {hasMorePlaylists && (
+            <div className="context-menu__item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} onClick={() => { setPlaylistModal(true); setContextMenu(null); }}>
+              <span>Other</span>
+              <span style={{ fontSize: 16, opacity: 0.5 }}>&gt;</span>
+            </div>
+          )}
 
           <div className="context-menu__sep"></div>
           <div className="context-menu__item danger" onClick={(e) => { e.stopPropagation(); setContextMenu(null); setDeletePrompt(true); }}>
-            🗑️ Eliminar ({selectedIds.size})
+            🗑️ Delete ({selectedIds.size})
           </div>
         </div>
       )}
 
       {deletePrompt && (
         <Modal
-          title="Eliminar canciones"
-          description={`¿Estás seguro que deseas eliminar ${selectedIds.size} canciones de tu biblioteca? Esta acción no se puede deshacer.`}
-          confirmText="Sí, eliminar"
-          cancelText="Cancelar"
+          title="Delete songs"
+          description={`Are you sure you want to delete ${selectedIds.size} songs from your library? This action cannot be undone.`}
+          confirmText="Yes, delete"
+          cancelText="Cancel"
           danger
           onConfirm={deleteMultiple}
           onCancel={() => setDeletePrompt(false)}
         />
+      )}
+
+      {playlistModal && (
+        <Modal
+          title="Add to Playlist"
+          description={`Select a playlist for the ${selectedIds.size} selected songs.`}
+          onCancel={() => setPlaylistModal(false)}
+        >
+          <div className="playlist-selection-grid" style={{ maxHeight: 300, overflowY: 'auto', marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {selectionPlaylists.map(p => (
+              <div
+                key={p.id}
+                className="context-menu__item"
+                style={{ borderRadius: 8, padding: '12px', background: 'var(--bg-elevated)', display: 'flex', alignItems: 'center', gap: 10 }}
+                onClick={() => addToPlaylist(p)}
+              >
+                <div style={{ fontSize: 20 }}>🎶</div>
+                <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</div>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+
+      {newPlaylistPrompt && (
+        <Modal
+          title="New Playlist"
+          description="Enter a name for your new playlist."
+          confirmText="Create"
+          onConfirm={createPlaylistAndAdd}
+          onCancel={() => { setNewPlaylistPrompt(false); setNewPlaylistName(''); }}
+        >
+          <input
+            className="input"
+            autoFocus
+            placeholder="Playlist name..."
+            value={newPlaylistName}
+            onChange={(e) => setNewPlaylistName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && createPlaylistAndAdd()}
+            style={{ marginTop: 12 }}
+          />
+        </Modal>
       )}
 
 
