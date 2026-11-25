@@ -50,6 +50,11 @@ export default function QueuePanel() {
   // While a row is dragged, the rest of the window accepts the drop: dropping there removes it
   useEffect(() => {
     if (dragFrom === null) return
+    const reset = () => {
+      setDragFrom(null)
+      setOver(null)
+      setOutside(false)
+    }
     const inPanel = (t: EventTarget | null) => t instanceof Node && !!panel.current?.contains(t)
     const onOver = (e: DragEvent) => {
       if (inPanel(e.target)) return
@@ -64,12 +69,19 @@ export default function QueuePanel() {
       // The playing song stays (like its row, which has no remove button)
       const s = usePlayerStore.getState()
       if (dragFrom !== s.currentIndex) s.removeFromQueue(dragFrom)
+      // The removed row unmounts, so its own dragend never reaches us: end the drag here,
+      // or the song that takes its place would stay marked
+      reset()
     }
+    // Fallback for any drag that ends without a drop we handled (Escape, unmounted row…)
+    const onEnd = () => reset()
     document.addEventListener('dragover', onOver)
     document.addEventListener('drop', onDrop)
+    document.addEventListener('dragend', onEnd)
     return () => {
       document.removeEventListener('dragover', onOver)
       document.removeEventListener('drop', onDrop)
+      document.removeEventListener('dragend', onEnd)
     }
   }, [dragFrom])
 
