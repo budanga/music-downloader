@@ -784,14 +784,94 @@ select {
   gap: 10px;
   flex-wrap: wrap;
 }
-.dlrow .field {
+.dlfield {
+  position: relative;
   flex: 1 1 260px;
+  display: flex;
+}
+.dlrow .field {
+  flex: 1;
+  min-width: 0;
+  padding-right: 40px;
   font-family: var(--f-mono);
   font-size: 13px;
+}
+.dlfield__clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 .err {
   font-size: 13px;
   color: var(--danger);
+}
+
+/* ─── Downloads search results ──────────────────────────────────────────── */
+.results {
+  padding: 6px 8px 8px;
+  margin-bottom: 14px;
+}
+.results__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 4px 6px 10px;
+  font: 600 10.5px/1.4 var(--f-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.result {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 7px 10px;
+  border-radius: 9px;
+}
+.result:hover {
+  background: var(--bg3);
+}
+.result__thumb {
+  width: 64px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--bg3);
+  display: block;
+}
+.result__t {
+  min-width: 0;
+}
+.result__t b,
+.result__t span {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.result__t b {
+  font-weight: 600;
+}
+.result__t span {
+  font-size: 12.5px;
+  color: var(--text2);
+}
+.result__d {
+  font: 500 12.5px var(--f-mono);
+  color: var(--text2);
+  font-variant-numeric: tabular-nums;
+}
+.result__state {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text2);
+  padding: 0 6px;
+}
+.result__state.done {
+  color: var(--success);
 }
 .jobs {
   display: grid;
@@ -972,7 +1052,6 @@ select {
 
 /* ─── Player ────────────────────────────────────────────────────────────── */
 .player {
-  cursor: pointer;
   margin: 12px 18px 14px 16px;
   background: var(--bg2);
   border: 1px solid var(--border);

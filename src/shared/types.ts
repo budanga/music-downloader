@@ -77,9 +77,25 @@ export interface AppSettings {
   ytdlpPath: string
   ffmpegPath: string
   theme: 'dark' | 'light' | 'system'
+  /** Where the Downloads search looks */
+  searchSource: 'youtube' | 'ytmusic'
   autoUpdateYtdlp: boolean
   showNotifications: boolean
   minimizeToTray: boolean
+}
+
+/** One result of the Downloads search */
+export interface SearchResult {
+  id: string
+  /** Link to download, as if it had been pasted */
+  url: string
+  title: string
+  /** Artist (YouTube Music) or channel (YouTube) */
+  artist: string | null
+  album: string | null
+  /** Seconds */
+  duration: number | null
+  thumbnail: string | null
 }
 
 export type SortField =

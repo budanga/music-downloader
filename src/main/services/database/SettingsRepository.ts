@@ -20,6 +20,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   ytdlpPath: 'yt-dlp',
   ffmpegPath: 'ffmpeg',
   theme: 'system',
+  searchSource: 'youtube',
   autoUpdateYtdlp: false,
   showNotifications: true,
   minimizeToTray: false

@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/ipc.channels'
-import type { LibraryFilters, LibrarySort, AppSettings } from '../shared/types'
+import type { LibraryFilters, LibrarySort, AppSettings, SearchResult } from '../shared/types'
 import type { DownloadRequest, DownloadProgress } from '../shared/download.types'
 
 /**
@@ -56,7 +56,12 @@ const api = {
     retry: (id: string) => ipcRenderer.invoke(IPC.DOWNLOAD_RETRY, id),
     getQueue: () => ipcRenderer.invoke(IPC.DOWNLOAD_GET_QUEUE),
     clearCompleted: () => ipcRenderer.invoke(IPC.DOWNLOAD_CLEAR_COMPLETED),
-    getHistory: () => ipcRenderer.invoke(IPC.DOWNLOAD_GET_HISTORY)
+    getHistory: () => ipcRenderer.invoke(IPC.DOWNLOAD_GET_HISTORY),
+    /** Searches YouTube or YouTube Music (per settings) for something to download */
+    search: (
+      query: string
+    ): Promise<{ success: true; results: SearchResult[] } | { success: false; error: string }> =>
+      ipcRenderer.invoke(IPC.DOWNLOAD_SEARCH, query)
   },
 
   // ─── Settings ─────────────────────────────────────────────────────────────

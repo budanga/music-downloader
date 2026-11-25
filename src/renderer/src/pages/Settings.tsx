@@ -81,7 +81,7 @@ export default function SettingsPage() {
       onClick={() => save(key, !settings[key])}
     />
   )
-  const seg = <K extends 'audioFormat' | 'audioQuality' | 'theme'>(
+  const seg = <K extends 'audioFormat' | 'audioQuality' | 'theme' | 'searchSource'>(
     key: K,
     options: Array<[AppSettings[K], string]>,
     label: string
@@ -133,6 +133,20 @@ export default function SettingsPage() {
           <button className="btn ghost sm" onClick={chooseDir}>
             Cambiar…
           </button>
+        </div>
+        <div className="srow">
+          <div>
+            <b>Buscar en</b>
+            <small>Dónde busca el buscador de Descargas</small>
+          </div>
+          {seg(
+            'searchSource',
+            [
+              ['youtube', 'YouTube'],
+              ['ytmusic', 'YouTube Music']
+            ],
+            'Buscar en'
+          )}
         </div>
         <div className="srow">
           <div>

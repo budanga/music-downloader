@@ -85,8 +85,9 @@ function createWindow(): void {
 
   // Minimize to tray if enabled
   mainWindow.on('close', (e) => {
-    const settings = getAllSettings()
-    if (settings.minimizeToTray && tray && !isQuitting) {
+    // While quitting, don't touch the database: it may already be closing
+    if (isQuitting || !tray) return
+    if (getAllSettings().minimizeToTray) {
       e.preventDefault()
       mainWindow!.hide()
     }
@@ -172,17 +173,17 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    closeDatabase()
-    app.quit()
-  }
+  if (process.platform !== 'darwin') app.quit()
 })
 
 app.on('before-quit', () => {
   isQuitting = true
   downloadManager.shutdown()
-  closeDatabase()
 })
+
+// Close the database last, once every window is gone: before-quit runs before the windows
+// close, and their close handler still read settings (the "Database not initialized" error)
+app.on('will-quit', () => closeDatabase())
 
 // Prevent multiple instances
 const gotLock = app.requestSingleInstanceLock()

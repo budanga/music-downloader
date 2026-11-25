@@ -29,6 +29,7 @@ import {
 import { getSetting, setSetting, getAllSettings } from '../services/database/SettingsRepository'
 import { downloadManager } from '../services/downloader/DownloadManager'
 import { YtDlpWrapper } from '../services/downloader/YtDlpWrapper'
+import { search } from '../services/downloader/search'
 import type { LibraryFilters, LibrarySort } from '../../shared/types'
 import type { DownloadRequest } from '../../shared/download.types'
 import fs from 'fs'
@@ -216,6 +217,20 @@ function registerDownloadHandlers(): void {
   ipcMain.handle(IPC.DOWNLOAD_RETRY, (_e, id: string) => {
     downloadManager.retry(id)
     return { success: true }
+  })
+
+  ipcMain.handle(IPC.DOWNLOAD_SEARCH, async (_e, query: unknown) => {
+    if (typeof query !== 'string' || !query.trim() || query.length > 200) {
+      return { success: false, error: 'Invalid search' }
+    }
+    const settings = getAllSettings()
+    try {
+      const results = await search(query.trim(), settings.searchSource, settings.ytdlpPath)
+      return { success: true, results }
+    } catch (e) {
+      console.error('Search failed:', e)
+      return { success: false, error: String(e) }
+    }
   })
 
   ipcMain.handle(IPC.DOWNLOAD_GET_QUEUE, () => downloadManager.getQueue())

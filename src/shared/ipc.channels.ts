@@ -38,6 +38,7 @@ export const IPC = {
   DOWNLOAD_GET_QUEUE: 'download:get-queue',
   DOWNLOAD_CLEAR_COMPLETED: 'download:clear-completed',
   DOWNLOAD_GET_HISTORY: 'download:get-history',
+  DOWNLOAD_SEARCH: 'download:search',
 
   // Events (main → renderer)
   DOWNLOAD_PROGRESS: 'download:progress',
