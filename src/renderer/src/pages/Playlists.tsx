@@ -5,6 +5,7 @@ import { usePlayerStore } from '../store/playerStore'
 import { useToast } from '../components/ui/Toast'
 import { Modal } from '../components/ui/Modal'
 import { CreatePlaylistModal } from '../components/ui/CreatePlaylistModal'
+import { RenamePlaylistModal } from '../components/ui/RenamePlaylistModal'
 import { DotsIcon, PlayIcon, PlusIcon, TrashIcon, XIcon } from '../components/ui/icons'
 import { useCollectionMenu, type Collection } from '../components/library/useCollectionMenu'
 import SectionCover from '../components/layout/SectionCover'
@@ -30,6 +31,7 @@ export default function PlaylistsPage() {
   const [songs, setSongs] = useState<PlaylistSong[]>([])
   const [creating, setCreating] = useState(false)
   const [toDelete, setToDelete] = useState<Playlist | null>(null)
+  const [renaming, setRenaming] = useState<Playlist | null>(null)
 
   // Counts change outside this page (downloads, menus elsewhere): reload them on entry
   useEffect(() => {
@@ -69,6 +71,7 @@ export default function PlaylistsPage() {
   const collection = (pl: Playlist): Collection => ({
     name: nameOf(pl),
     songs: () => (pl.id === selectedId ? songs : window.api.playlists.getSongs(pl.id)),
+    rename: isLiked(pl) ? undefined : () => setRenaming(pl),
     remove: isLiked(pl)
       ? undefined
       : {
@@ -164,6 +167,7 @@ export default function PlaylistsPage() {
           }
         />
         {menu.element}
+        {renaming && <RenamePlaylistModal playlist={renaming} onClose={() => setRenaming(null)} />}
         {toDelete && (
           <Modal
             title="Eliminar lista"
@@ -223,6 +227,7 @@ export default function PlaylistsPage() {
       </div>
 
       {menu.element}
+      {renaming && <RenamePlaylistModal playlist={renaming} onClose={() => setRenaming(null)} />}
       {creating && <CreatePlaylistModal onClose={() => setCreating(false)} />}
       {toDelete && (
         <Modal

@@ -51,7 +51,15 @@ export default function PlayerBar() {
   }[p.repeatMode]
 
   return (
-    <footer className="player" aria-label="Reproductor">
+    <footer
+      className="player"
+      aria-label="Reproductor"
+      onClick={(e) => {
+        // The controls keep their own job; anywhere else on the bar toggles the queue
+        if ((e.target as HTMLElement).closest('button, input, a, [role="slider"]')) return
+        setQueueOpen(!queueOpen)
+      }}
+    >
       <div className="player__cover">
         <DitherCanvas field={song ? coverFn(song.albumTitle || song.title) : ART.albums} px={2} />
       </div>

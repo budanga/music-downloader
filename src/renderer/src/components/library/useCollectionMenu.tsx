@@ -8,6 +8,8 @@ export interface Collection {
   name: string
   /** The songs, in play order. Can be fetched on demand (playlists). */
   songs: () => Song[] | Promise<Song[]>
+  /** Adds a "rename" item (playlists) */
+  rename?: () => void
   /** Adds a destructive item that asks for confirmation first */
   remove?: {
     label: string
@@ -96,6 +98,20 @@ export function useCollectionMenu() {
           >
             Agregar a la cola
           </button>
+          {menu.c.rename && (
+            <>
+              <div className="context-menu__sep" />
+              <button
+                className="context-menu__item"
+                onClick={() => {
+                  menu.c.rename?.()
+                  setMenu(null)
+                }}
+              >
+                Cambiar nombre…
+              </button>
+            </>
+          )}
           {menu.c.remove && (
             <>
               <div className="context-menu__sep" />

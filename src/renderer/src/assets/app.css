@@ -972,6 +972,7 @@ select {
 
 /* ─── Player ────────────────────────────────────────────────────────────── */
 .player {
+  cursor: pointer;
   margin: 12px 18px 14px 16px;
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -1041,20 +1042,24 @@ select {
   gap: 4px;
 }
 .ctl .ib {
-  width: 36px;
-  height: 36px;
+  width: 42px;
+  height: 42px;
+}
+.ctl .ib svg {
+  width: 20px;
+  height: 20px;
 }
 .ctl .ib.on {
   background: var(--accent-dim);
 }
 .ctl .badge {
   position: absolute;
-  font: 600 9px/1 var(--f-mono);
-  margin: 18px 0 0 18px;
+  font: 600 10px/1 var(--f-mono);
+  margin: 21px 0 0 21px;
 }
 .ctl .play {
-  width: 44px;
-  height: 44px;
+  width: 50px;
+  height: 50px;
   border-radius: 12px;
   background: var(--accent);
   color: #fff;
@@ -1066,14 +1071,16 @@ select {
   background: var(--shade);
 }
 .ctl .play svg {
-  width: 18px;
-  height: 18px;
+  width: 21px;
+  height: 21px;
   fill: #fff;
 }
+/* Block glyphs (▁…█) hang below the baseline: a roomy line box keeps the low bars from
+   being clipped by overflow: hidden */
 .spec {
-  font: 500 17px/1 var(--f-mono);
+  font: 500 22px/1.5 var(--f-mono);
   color: var(--accent);
-  letter-spacing: -0.06em;
+  letter-spacing: -0.04em;
   white-space: nowrap;
   overflow: hidden;
   text-align: center;
@@ -1086,6 +1093,15 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.vol .ib,
+.pinfo .row1 .ib {
+  width: 36px;
+  height: 36px;
+}
+.vol .ib svg {
+  width: 19px;
+  height: 19px;
 }
 /* Plain volume slider (no dither): a thin track that fills up to --v */
 .range {
@@ -1394,6 +1410,15 @@ select {
   font: 500 28px/1.05 var(--f-display);
   letter-spacing: -0.02em;
 }
+.queue__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.queue__actions .btn.sm {
+  padding: 4px 11px;
+  font-size: 12.5px;
+}
 .queue__head .mono {
   font-size: 11.5px;
   color: var(--text2);
@@ -1402,28 +1427,7 @@ select {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px 8px 14px;
-}
-.queue h3 {
-  font: 600 10.5px/1 var(--f-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text3);
-  padding: 14px 10px 8px;
-}
-.queue h3 small {
-  font: inherit;
-  color: var(--accent);
-}
-.queue__sub {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-right: 4px;
-}
-.queue__sub .btn.sm {
-  padding: 3px 10px;
-  font-size: 12px;
+  padding: 8px 8px 14px;
 }
 .queue__empty {
   padding: 6px 10px 10px;
@@ -1449,6 +1453,30 @@ select {
 }
 .qrow.past {
   opacity: 0.55;
+}
+.qrow {
+  cursor: grab;
+}
+.qrow:active {
+  cursor: grabbing;
+}
+.qrow.dragging {
+  opacity: 0.4;
+}
+/* Dragged outside the panel: dropping takes it out of the queue */
+.qrow.removing {
+  opacity: 0.5;
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  text-decoration: line-through;
+}
+.qrow.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.qrow.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.queue.is-dragging .qrow .ib {
+  visibility: hidden;
 }
 .qrow .n {
   font: 500 11.5px var(--f-mono);

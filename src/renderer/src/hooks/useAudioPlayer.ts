@@ -79,12 +79,9 @@ export function useAudioPlayer() {
         if (rafRef.current) cancelAnimationFrame(rafRef.current)
       },
       onend: () => {
-        // Read fresh state: repeat mode may have changed since this Howl was created.
-        // Every other track change bumps playId, which re-runs this effect with a fresh Howl.
-        if (usePlayerStore.getState().repeatMode === 'one') {
-          howl.seek(0)
-          howl.play()
-        } else next(true)
+        // next() also handles repeat-one: it bumps playId, which re-runs this effect with a
+        // fresh Howl. (Restarting this Howl here doesn't work: Howler stops it right after.)
+        next(true)
       },
       onloaderror: (_id, err) => {
         console.error('Howl load error:', err)

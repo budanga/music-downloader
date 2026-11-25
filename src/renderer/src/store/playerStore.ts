@@ -3,6 +3,31 @@ import type { Song } from '../../../shared/types'
 
 type RepeatMode = 'none' | 'one' | 'all'
 
+function shuffled<T>(list: T[]): T[] {
+  const out = [...list]
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[out[i], out[j]] = [out[j], out[i]]
+  }
+  return out
+}
+
+/** The original order, keeping only the songs still queued (matched by object, counted). */
+function restoreOrder(original: Song[], queue: Song[]): Song[] {
+  const left = new Map<Song, number>()
+  for (const s of queue) left.set(s, (left.get(s) ?? 0) + 1)
+  const out: Song[] = []
+  const take = (s: Song) => {
+    const n = left.get(s)
+    if (!n) return
+    out.push(s)
+    left.set(s, n - 1)
+  }
+  original.forEach(take)
+  queue.forEach(take) // anything the original never saw goes last
+  return out
+}
+
 interface PlayerState {
   // Queue
   queue: Song[]
@@ -20,6 +45,11 @@ interface PlayerState {
   seekToTarget: number | null
   /** Bumped every time a track (re)starts, so the same song twice in a row still restarts */
   playId: number
+  /**
+   * While shuffle is on: the queue in its original order. Shuffling happens once (when it's
+   * turned on or a new queue starts); turning it off restores this order.
+   */
+  originalQueue: Song[] | null
 
   // Queue actions
   setQueue: (songs: Song[], startIndex?: number) => void
@@ -29,6 +59,8 @@ interface PlayerState {
   /** Inserts songs right after the current one, in order */
   playNextMany: (songs: Song[]) => void
   removeFromQueue: (index: number) => void
+  /** Moves the song at `from` so it ends up at index `to`; the current song keeps playing */
+  moveInQueue: (from: number, to: number) => void
   removeBySongId: (id: string) => void
   clearQueue: () => void
   /** Drops every song after the current one */
@@ -39,7 +71,10 @@ interface PlayerState {
   play: () => void
   pause: () => void
   togglePlay: () => void
-  /** `auto`: the song ended on its own. Skipping past the last song does nothing. */
+  /**
+   * `auto`: the song ended on its own. With repeat-one the same song starts over. Skipping
+   * past the last song does nothing.
+   */
   next: (auto?: boolean) => void
   previous: () => void
   playNext: (song: Song) => void
@@ -68,26 +103,38 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentSong: null,
   seekToTarget: null,
   playId: 0,
+  originalQueue: null,
 
   setQueue: (songs, startIndex = 0) => {
-    set((s) => ({
-      queue: songs,
-      currentIndex: startIndex,
-      currentSong: songs[startIndex] ?? null,
-      isPlaying: songs.length > 0,
-      currentTime: 0,
-      playId: s.playId + 1
-    }))
+    set((s) => {
+      // With shuffle on, the chosen song plays first and the rest come in random order
+      const first = songs[startIndex]
+      const queue =
+        s.isShuffle && first
+          ? [first, ...shuffled(songs.filter((_, i) => i !== startIndex))]
+          : songs
+      const index = s.isShuffle && first ? 0 : startIndex
+      return {
+        queue,
+        originalQueue: s.isShuffle ? songs : null,
+        currentIndex: index,
+        currentSong: queue[index] ?? null,
+        isPlaying: songs.length > 0,
+        currentTime: 0,
+        playId: s.playId + 1
+      }
+    })
   },
 
-  addToQueue: (song) => {
-    set((s) => ({ queue: [...s.queue, song] }))
-  },
+  addToQueue: (song) => get().addManyToQueue([song]),
 
   addManyToQueue: (songs) => {
     if (!songs.length) return
     if (!get().currentSong) return get().setQueue(songs, 0)
-    set((s) => ({ queue: [...s.queue, ...songs] }))
+    set((s) => ({
+      queue: [...s.queue, ...songs],
+      originalQueue: s.originalQueue && [...s.originalQueue, ...songs]
+    }))
   },
 
   playNextMany: (songs) => {
@@ -96,7 +143,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set((s) => {
       const queue = [...s.queue]
       queue.splice(s.currentIndex + 1, 0, ...songs)
-      return { queue }
+      let originalQueue = s.originalQueue
+      if (originalQueue) {
+        // Also right after the current song in the original order, so unshuffling keeps them next
+        originalQueue = [...originalQueue]
+        const at = originalQueue.indexOf(s.queue[s.currentIndex])
+        originalQueue.splice(at + 1, 0, ...songs)
+      }
+      return { queue, originalQueue }
     })
   },
 
@@ -114,6 +168,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         isPlaying: s.isPlaying && newQueue.length > 0,
         playId: s.playId + 1
       }
+    })
+  },
+
+  moveInQueue: (from, to) => {
+    set((s) => {
+      if (from === to || !s.queue[from] || to < 0 || to >= s.queue.length) return {}
+      const queue = [...s.queue]
+      queue.splice(to, 0, queue.splice(from, 1)[0])
+      let currentIndex = s.currentIndex
+      if (from === currentIndex) currentIndex = to
+      else if (from < currentIndex && to >= currentIndex) currentIndex--
+      else if (from > currentIndex && to <= currentIndex) currentIndex++
+      return { queue, currentIndex }
     })
   },
 
@@ -149,8 +216,14 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     })
   },
 
-  clearQueue: () => set({ queue: [], currentIndex: 0, currentSong: null, isPlaying: false }),
-  clearUpcoming: () => set((s) => ({ queue: s.queue.slice(0, s.currentIndex + 1) })),
+  clearQueue: () =>
+    set({ queue: [], originalQueue: null, currentIndex: 0, currentSong: null, isPlaying: false }),
+  clearUpcoming: () =>
+    set((s) => {
+      const queue = s.queue.slice(0, s.currentIndex + 1)
+      const kept = new Set(queue)
+      return { queue, originalQueue: s.originalQueue && s.originalQueue.filter((x) => kept.has(x)) }
+    }),
   jumpTo: (index) => {
     const { queue, playId } = get()
     if (!queue[index]) return
@@ -168,12 +241,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
 
   next: (auto = false) => {
-    const { queue, currentIndex, isShuffle, repeatMode, playId } = get()
+    // Shuffle already reordered the queue, so "next" is always the next one in it
+    const { queue, currentIndex, repeatMode, playId } = get()
     if (queue.length === 0) return
 
     let nextIndex: number
-    if (isShuffle) {
-      nextIndex = Math.floor(Math.random() * queue.length)
+    if (repeatMode === 'one') {
+      nextIndex = currentIndex
     } else if (currentIndex < queue.length - 1) {
       nextIndex = currentIndex + 1
     } else if (repeatMode === 'all') {
@@ -213,29 +287,34 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     })
   },
 
-  playNext: (song) => {
-    set((s) => {
-      if (s.queue.length === 0) {
-        return {
-          queue: [song],
-          currentIndex: 0,
-          currentSong: song,
-          isPlaying: true,
-          currentTime: 0,
-          playId: s.playId + 1
-        }
-      }
-      const newQueue = [...s.queue]
-      newQueue.splice(s.currentIndex + 1, 0, song)
-      return { queue: newQueue }
-    })
-  },
+  playNext: (song) => get().playNextMany([song]),
 
   seekTo: (seconds) => set({ seekToTarget: seconds }),
   clearSeekToTarget: () => set({ seekToTarget: null }),
   setVolume: (vol) => set({ volume: Math.max(0, Math.min(1, vol)), isMuted: false }),
   toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
-  toggleShuffle: () => set((s) => ({ isShuffle: !s.isShuffle })),
+  toggleShuffle: () =>
+    set((s) => {
+      const current = s.queue[s.currentIndex]
+      if (!s.isShuffle) {
+        // Shuffle once: only what comes after the current song; what already played stays
+        return {
+          isShuffle: true,
+          originalQueue: s.queue,
+          queue: [
+            ...s.queue.slice(0, s.currentIndex + 1),
+            ...shuffled(s.queue.slice(s.currentIndex + 1))
+          ]
+        }
+      }
+      const queue = s.originalQueue ? restoreOrder(s.originalQueue, s.queue) : s.queue
+      return {
+        isShuffle: false,
+        originalQueue: null,
+        queue,
+        currentIndex: current ? Math.max(0, queue.indexOf(current)) : 0
+      }
+    }),
   cycleRepeat: () =>
     set((s) => ({
       repeatMode: s.repeatMode === 'none' ? 'all' : s.repeatMode === 'all' ? 'one' : 'none'
@@ -246,15 +325,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setIsPlaying: (v) => set({ isPlaying: v }),
   updateSongMetadata: (song) => {
     set((s) => {
-      const updates: Partial<PlayerState> = {}
-      if (s.currentSong?.id === song.id) {
-        updates.currentSong = { ...s.currentSong, ...song }
+      // Replace each object once and reuse it in the queue, the original order and currentSong,
+      // because shuffle matches songs by object
+      const swapped = new Map<Song, Song>()
+      const swap = (x: Song) => {
+        if (x.id !== song.id) return x
+        if (!swapped.has(x)) swapped.set(x, { ...x, ...song })
+        return swapped.get(x)!
       }
-      const index = s.queue.findIndex((x) => x.id === song.id)
-      if (index !== -1) {
-        const newQueue = [...s.queue]
-        newQueue[index] = { ...newQueue[index], ...song }
-        updates.queue = newQueue
+      const queue = s.queue.map(swap)
+      const updates: Partial<PlayerState> = {
+        queue,
+        originalQueue: s.originalQueue && s.originalQueue.map(swap)
+      }
+      if (s.currentSong?.id === song.id) {
+        updates.currentSong = queue[s.currentIndex] ?? { ...s.currentSong, ...song }
       }
       return updates
     })
