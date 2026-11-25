@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Song, Artist, Album, Playlist } from '../../shared/types'
+import type { Song, Artist, Album, Playlist } from '../../../shared/types'
 
 interface LibraryStore {
   songs: Song[]
@@ -45,9 +45,9 @@ export const useLibraryStore = create<LibraryStore>((set) => ({
   removePlaylist: (id) => set((s) => ({ playlists: s.playlists.filter((p) => p.id !== id) })),
   updatePlaylist: (playlist) =>
     set((s) => ({
-      playlists: s.playlists.map((p) => (p.id === playlist.id ? playlist : p)),
+      playlists: s.playlists.map((p) => (p.id === playlist.id ? playlist : p))
     })),
 
   setLoading: (v) => set({ isLoading: v }),
-  setLastRefreshed: (t) => set({ lastRefreshed: t }),
+  setLastRefreshed: (t) => set({ lastRefreshed: t })
 }))

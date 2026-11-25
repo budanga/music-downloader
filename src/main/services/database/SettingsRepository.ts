@@ -9,7 +9,9 @@ function getDefaultMusicPath(): string {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  get downloadPath() { return getDefaultMusicPath() },
+  get downloadPath() {
+    return getDefaultMusicPath()
+  },
   audioFormat: 'mp3',
   audioQuality: 'best',
   embedThumbnail: true,
@@ -17,15 +19,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   maxConcurrentDownloads: 2,
   ytdlpPath: 'yt-dlp',
   ffmpegPath: 'ffmpeg',
-  theme: 'dark',
+  theme: 'system',
   autoUpdateYtdlp: false,
   showNotifications: true,
-  minimizeToTray: false,
+  minimizeToTray: false
 }
 
 export function getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] {
   const db = getDatabase()
-  const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as { value: string } | undefined
+  const row = db.prepare(`SELECT value FROM settings WHERE key = ?`).get(key) as
+    | { value: string }
+    | undefined
   if (!row) return DEFAULT_SETTINGS[key]
 
   try {
@@ -37,20 +41,26 @@ export function getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] 
 
 export function setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void {
   const db = getDatabase()
-  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`).run(key, JSON.stringify(value))
+  db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`).run(
+    key,
+    JSON.stringify(value)
+  )
 }
 
 export function getAllSettings(): AppSettings {
   const db = getDatabase()
-  const rows = db.prepare(`SELECT key, value FROM settings`).all() as { key: string; value: string }[]
+  const rows = db.prepare(`SELECT key, value FROM settings`).all() as {
+    key: string
+    value: string
+  }[]
   const settings: AppSettings = { ...DEFAULT_SETTINGS }
 
   for (const { key, value } of rows) {
     if (key in settings) {
       try {
-        ;(settings as Record<string, unknown>)[key] = JSON.parse(value)
+        ;(settings as unknown as Record<string, unknown>)[key] = JSON.parse(value)
       } catch {
-        ;(settings as Record<string, unknown>)[key] = value
+        ;(settings as unknown as Record<string, unknown>)[key] = value
       }
     }
   }

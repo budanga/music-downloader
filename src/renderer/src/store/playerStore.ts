@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Song } from '../../shared/types'
+import type { Song } from '../../../shared/types'
 
 type RepeatMode = 'none' | 'one' | 'all'
 
@@ -11,26 +11,36 @@ interface PlayerState {
   isPlaying: boolean
   isShuffle: boolean
   repeatMode: RepeatMode
-  volume: number           // 0–1
+  volume: number // 0–1
   isMuted: boolean
-  currentTime: number      // seconds
-  duration: number         // seconds
+  currentTime: number // seconds
+  duration: number // seconds
   // Derived
   currentSong: Song | null
   seekToTarget: number | null
+  /** Bumped every time a track (re)starts, so the same song twice in a row still restarts */
+  playId: number
 
   // Queue actions
   setQueue: (songs: Song[], startIndex?: number) => void
   addToQueue: (song: Song) => void
+  /** Adds songs at the end of the queue (starts playing them if nothing is queued) */
+  addManyToQueue: (songs: Song[]) => void
+  /** Inserts songs right after the current one, in order */
+  playNextMany: (songs: Song[]) => void
   removeFromQueue: (index: number) => void
   removeBySongId: (id: string) => void
   clearQueue: () => void
+  /** Drops every song after the current one */
+  clearUpcoming: () => void
+  jumpTo: (index: number) => void
 
   // Playback controls
   play: () => void
   pause: () => void
   togglePlay: () => void
-  next: () => void
+  /** `auto`: the song ended on its own. Skipping past the last song does nothing. */
+  next: (auto?: boolean) => void
   previous: () => void
   playNext: (song: Song) => void
   seekTo: (seconds: number) => void
@@ -57,31 +67,52 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   duration: 0,
   currentSong: null,
   seekToTarget: null,
+  playId: 0,
 
   setQueue: (songs, startIndex = 0) => {
-    set({
+    set((s) => ({
       queue: songs,
       currentIndex: startIndex,
       currentSong: songs[startIndex] ?? null,
       isPlaying: songs.length > 0,
       currentTime: 0,
-    })
+      playId: s.playId + 1
+    }))
   },
 
   addToQueue: (song) => {
     set((s) => ({ queue: [...s.queue, song] }))
   },
 
+  addManyToQueue: (songs) => {
+    if (!songs.length) return
+    if (!get().currentSong) return get().setQueue(songs, 0)
+    set((s) => ({ queue: [...s.queue, ...songs] }))
+  },
+
+  playNextMany: (songs) => {
+    if (!songs.length) return
+    if (!get().currentSong) return get().setQueue(songs, 0)
+    set((s) => {
+      const queue = [...s.queue]
+      queue.splice(s.currentIndex + 1, 0, ...songs)
+      return { queue }
+    })
+  },
+
   removeFromQueue: (index) => {
     set((s) => {
       const newQueue = s.queue.filter((_, i) => i !== index)
-      const newIndex = index < s.currentIndex
-        ? s.currentIndex - 1
-        : Math.min(s.currentIndex, newQueue.length - 1)
+      const newIndex =
+        index < s.currentIndex ? s.currentIndex - 1 : Math.min(s.currentIndex, newQueue.length - 1)
+      if (index !== s.currentIndex) return { queue: newQueue, currentIndex: newIndex }
       return {
         queue: newQueue,
         currentIndex: newIndex,
         currentSong: newQueue[newIndex] ?? null,
+        currentTime: 0,
+        isPlaying: s.isPlaying && newQueue.length > 0,
+        playId: s.playId + 1
       }
     })
   },
@@ -89,12 +120,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   removeBySongId: (id) => {
     set((s) => {
       const isCurrent = s.currentSong?.id === id
-      const newQueue = s.queue.filter(song => song.id !== id)
-      
+      const newQueue = s.queue.filter((song) => song.id !== id)
+
       if (newQueue.length === 0) {
         return { queue: [], currentIndex: 0, currentSong: null, isPlaying: false, currentTime: 0 }
       }
-      
+
       if (isCurrent) {
         // If we delete the song currently playing, stop playback and move cursor to the next song
         let newIndex = s.currentIndex
@@ -108,7 +139,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         }
       } else {
         // If we delete a DIFFERENT song, just update the queue and find the new index of our current song
-        let newIndex = newQueue.findIndex(song => song.id === s.currentSong?.id)
+        let newIndex = newQueue.findIndex((song) => song.id === s.currentSong?.id)
         if (newIndex === -1) newIndex = 0 // Fallback
         return {
           queue: newQueue,
@@ -119,13 +150,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   clearQueue: () => set({ queue: [], currentIndex: 0, currentSong: null, isPlaying: false }),
+  clearUpcoming: () => set((s) => ({ queue: s.queue.slice(0, s.currentIndex + 1) })),
+  jumpTo: (index) => {
+    const { queue, playId } = get()
+    if (!queue[index]) return
+    set({
+      currentIndex: index,
+      currentSong: queue[index],
+      currentTime: 0,
+      isPlaying: true,
+      playId: playId + 1
+    })
+  },
 
   play: () => set({ isPlaying: true }),
   pause: () => set({ isPlaying: false }),
   togglePlay: () => set((s) => ({ isPlaying: !s.isPlaying })),
 
-  next: () => {
-    const { queue, currentIndex, isShuffle, repeatMode } = get()
+  next: (auto = false) => {
+    const { queue, currentIndex, isShuffle, repeatMode, playId } = get()
     if (queue.length === 0) return
 
     let nextIndex: number
@@ -136,16 +179,22 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     } else if (repeatMode === 'all') {
       nextIndex = 0
     } else {
-      // End of queue
-      set({ isPlaying: false })
+      // End of queue: stop when the last song finishes; a manual skip keeps it playing
+      if (auto) set({ isPlaying: false })
       return
     }
 
-    set({ currentIndex: nextIndex, currentSong: queue[nextIndex], currentTime: 0, isPlaying: true })
+    set({
+      currentIndex: nextIndex,
+      currentSong: queue[nextIndex],
+      currentTime: 0,
+      isPlaying: true,
+      playId: playId + 1
+    })
   },
 
   previous: () => {
-    const { queue, currentIndex, currentTime } = get()
+    const { queue, currentIndex, currentTime, playId } = get()
     if (queue.length === 0) return
 
     // If more than 3s in, restart current song
@@ -155,13 +204,26 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
 
     const prevIndex = currentIndex > 0 ? currentIndex - 1 : 0
-    set({ currentIndex: prevIndex, currentSong: queue[prevIndex], currentTime: 0, isPlaying: true })
+    set({
+      currentIndex: prevIndex,
+      currentSong: queue[prevIndex],
+      currentTime: 0,
+      isPlaying: true,
+      playId: playId + 1
+    })
   },
 
   playNext: (song) => {
     set((s) => {
       if (s.queue.length === 0) {
-        return { queue: [song], currentIndex: 0, currentSong: song, isPlaying: true, currentTime: 0 }
+        return {
+          queue: [song],
+          currentIndex: 0,
+          currentSong: song,
+          isPlaying: true,
+          currentTime: 0,
+          playId: s.playId + 1
+        }
       }
       const newQueue = [...s.queue]
       newQueue.splice(s.currentIndex + 1, 0, song)
@@ -176,7 +238,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   toggleShuffle: () => set((s) => ({ isShuffle: !s.isShuffle })),
   cycleRepeat: () =>
     set((s) => ({
-      repeatMode: s.repeatMode === 'none' ? 'all' : s.repeatMode === 'all' ? 'one' : 'none',
+      repeatMode: s.repeatMode === 'none' ? 'all' : s.repeatMode === 'all' ? 'one' : 'none'
     })),
 
   setCurrentTime: (t) => set({ currentTime: t }),
@@ -188,7 +250,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       if (s.currentSong?.id === song.id) {
         updates.currentSong = { ...s.currentSong, ...song }
       }
-      const index = s.queue.findIndex(x => x.id === song.id)
+      const index = s.queue.findIndex((x) => x.id === song.id)
       if (index !== -1) {
         const newQueue = [...s.queue]
         newQueue[index] = { ...newQueue[index], ...song }
@@ -196,5 +258,5 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       }
       return updates
     })
-  },
+  }
 }))

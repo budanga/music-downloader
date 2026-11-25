@@ -2,7 +2,7 @@ import { useEffect, useCallback } from 'react'
 import { useLibraryStore } from '../store/libraryStore'
 import { useDownloadStore } from '../store/downloadStore'
 import { usePlayerStore } from '../store/playerStore'
-import type { Song, Playlist } from '../../shared/types'
+import type { Song, Playlist } from '../../../shared/types'
 
 /**
  * useLibrary — loads the library from the main process and subscribes
@@ -20,7 +20,7 @@ export function useLibrary() {
     addPlaylist,
     removePlaylist,
     setLoading,
-    setLastRefreshed,
+    setLastRefreshed
   } = useLibraryStore()
   const { updateProgress } = useDownloadStore()
 
@@ -32,7 +32,7 @@ export function useLibrary() {
         window.api.library.getSongs(),
         window.api.library.getArtists(),
         window.api.library.getAlbums(),
-        window.api.playlists.list(),
+        window.api.playlists.list()
       ])
       setSongs(songs)
       setArtists(artists)
@@ -59,6 +59,8 @@ export function useLibrary() {
       refreshTimer = setTimeout(() => {
         window.api.library.getArtists().then(setArtists)
         window.api.library.getAlbums().then(setAlbums)
+        // Downloads add songs to playlists in the main process: refresh their counts too
+        window.api.playlists.list().then(setPlaylists)
       }, 1000)
     }
 
@@ -86,6 +88,8 @@ export function useLibrary() {
     const unsubCompleted = window.api.on.downloadCompleted(({ song }) => {
       updateSong(song as Song)
       usePlayerStore.getState().updateSongMetadata(song as Song)
+      // A song that was already in the library can still be added to a playlist
+      debouncedRefreshMetadata()
     })
 
     const unsubPlaylistAdded = window.api.on.libraryPlaylistAdded((playlist) => {
@@ -105,7 +109,18 @@ export function useLibrary() {
       unsubPlaylistAdded()
       unsubPlaylistDeleted()
     }
-  }, [refresh, addSong, removeSong, updateSong, updateProgress, addPlaylist, removePlaylist, setArtists, setAlbums, setPlaylists])
+  }, [
+    refresh,
+    addSong,
+    removeSong,
+    updateSong,
+    updateProgress,
+    addPlaylist,
+    removePlaylist,
+    setArtists,
+    setAlbums,
+    setPlaylists
+  ])
 
   return { refresh }
 }

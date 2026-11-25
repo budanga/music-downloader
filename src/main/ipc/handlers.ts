@@ -1,16 +1,41 @@
-import { ipcMain, dialog, shell } from 'electron'
-import { IPC } from '../../../shared/ipc.channels'
-import { getAllSongs, getSongById, updateSong, deleteSong, incrementPlayCount, getRecentlyPlayed, getMostPlayed, searchSongs, getAllArtists, getAllAlbums, deleteArtist, deleteAlbum, cleanupLibrary } from '../services/database/SongRepository'
-import { getAllPlaylists, getPlaylistById, createPlaylist, updatePlaylist, deletePlaylist, getPlaylistSongs, addSongToPlaylist, removeSongFromPlaylist, reorderPlaylistSong } from '../services/database/PlaylistRepository'
+import { ipcMain, dialog, shell, BrowserWindow, nativeTheme } from 'electron'
+import { IPC } from '../../shared/ipc.channels'
+import {
+  getAllSongs,
+  getSongById,
+  updateSong,
+  deleteSong,
+  incrementPlayCount,
+  getRecentlyPlayed,
+  getMostPlayed,
+  searchSongs,
+  getAllArtists,
+  getAllAlbums,
+  deleteArtist,
+  deleteAlbum,
+  cleanupLibrary
+} from '../services/database/SongRepository'
+import {
+  getAllPlaylists,
+  getPlaylistById,
+  createPlaylist,
+  updatePlaylist,
+  deletePlaylist,
+  getPlaylistSongs,
+  addSongToPlaylist,
+  removeSongFromPlaylist,
+  reorderPlaylistSong
+} from '../services/database/PlaylistRepository'
 import { getSetting, setSetting, getAllSettings } from '../services/database/SettingsRepository'
 import { downloadManager } from '../services/downloader/DownloadManager'
 import { YtDlpWrapper } from '../services/downloader/YtDlpWrapper'
-import type { LibraryFilters, LibrarySort } from '../../../shared/types'
-import type { DownloadRequest } from '../../../shared/download.types'
+import type { LibraryFilters, LibrarySort } from '../../shared/types'
+import type { DownloadRequest } from '../../shared/download.types'
 import fs from 'fs'
 import path from 'path'
 import { app } from 'electron'
-import { SPECIAL_PLAYLISTS } from '../../../shared/constants'
+import { SPECIAL_PLAYLISTS } from '../../shared/constants'
+import { isValidYoutubeUrl } from '../../shared/url'
 
 export function registerAllIpcHandlers(): void {
   registerLibraryHandlers()
@@ -34,10 +59,13 @@ function registerLibraryHandlers(): void {
 
   ipcMain.handle(IPC.LIBRARY_GET_SONG, (_e, id: string) => getSongById(id))
 
-  ipcMain.handle(IPC.LIBRARY_UPDATE_SONG, (_e, id: string, updates: Parameters<typeof updateSong>[1]) => {
-    updateSong(id, updates)
-    return getSongById(id)
-  })
+  ipcMain.handle(
+    IPC.LIBRARY_UPDATE_SONG,
+    (_e, id: string, updates: Parameters<typeof updateSong>[1]) => {
+      updateSong(id, updates)
+      return getSongById(id)
+    }
+  )
 
   ipcMain.handle(IPC.LIBRARY_DELETE_SONG, (_e, id: string, deleteFile = false) => {
     const song = getSongById(id)
@@ -66,16 +94,16 @@ function registerLibraryHandlers(): void {
   ipcMain.handle(IPC.LIBRARY_TOGGLE_FAVORITE, (_e, id: string) => {
     const song = getSongById(id)
     if (!song) return null
-    
+
     const newStatus = !song.isFavorite
     updateSong(id, { isFavorite: newStatus })
-    
+
     if (newStatus) {
       addSongToPlaylist(SPECIAL_PLAYLISTS.LIKED_SONGS, id)
     } else {
       removeSongFromPlaylist(SPECIAL_PLAYLISTS.LIKED_SONGS, id)
     }
-    
+
     const updated = getSongById(id)
     if (updated) {
       _e.sender.send(IPC.LIBRARY_SONG_UPDATED, updated)
@@ -97,27 +125,33 @@ function registerPlaylistHandlers(): void {
   ipcMain.handle(IPC.PLAYLIST_LIST, () => getAllPlaylists())
   ipcMain.handle(IPC.PLAYLIST_GET, (_e, id: string) => getPlaylistById(id))
 
-  ipcMain.handle(IPC.PLAYLIST_CREATE, (_e, name: string, description?: string, thumbnail?: string) => {
-    // Basic validation
-    if (!name || name.trim().length === 0) {
-      throw new Error('Playlist name is required')
-    }
-
-    // Security: Limit thumbnail size and type if provided
-    if (thumbnail) {
-      // Check if it's a valid data URL and not too huge (e.g. 10MB limit on base64 string)
-      if (!thumbnail.startsWith('data:image/') || thumbnail.length > 15 * 1024 * 1024) {
-        throw new Error('Invalid playlist thumbnail')
+  ipcMain.handle(
+    IPC.PLAYLIST_CREATE,
+    (_e, name: string, description?: string, thumbnail?: string) => {
+      // Basic validation
+      if (!name || name.trim().length === 0) {
+        throw new Error('Playlist name is required')
       }
+
+      // Security: Limit thumbnail size and type if provided
+      if (thumbnail) {
+        // Check if it's a valid data URL and not too huge (e.g. 10MB limit on base64 string)
+        if (!thumbnail.startsWith('data:image/') || thumbnail.length > 15 * 1024 * 1024) {
+          throw new Error('Invalid playlist thumbnail')
+        }
+      }
+
+      return createPlaylist(name.trim(), description, thumbnail)
     }
+  )
 
-    return createPlaylist(name.trim(), description, thumbnail)
-  })
-
-  ipcMain.handle(IPC.PLAYLIST_UPDATE, (_e, id: string, updates: { name?: string; description?: string }) => {
-    updatePlaylist(id, updates)
-    return getPlaylistById(id)
-  })
+  ipcMain.handle(
+    IPC.PLAYLIST_UPDATE,
+    (_e, id: string, updates: { name?: string; description?: string }) => {
+      updatePlaylist(id, updates)
+      return getPlaylistById(id)
+    }
+  )
 
   ipcMain.handle(IPC.PLAYLIST_DELETE, (_e, id: string) => {
     deletePlaylist(id)
@@ -136,10 +170,13 @@ function registerPlaylistHandlers(): void {
     return { success: true }
   })
 
-  ipcMain.handle(IPC.PLAYLIST_REORDER, (_e, playlistId: string, songId: string, newPosition: number) => {
-    reorderPlaylistSong(playlistId, songId, newPosition)
-    return { success: true }
-  })
+  ipcMain.handle(
+    IPC.PLAYLIST_REORDER,
+    (_e, playlistId: string, songId: string, newIndex: number) => {
+      reorderPlaylistSong(playlistId, songId, newIndex)
+      return { success: true }
+    }
+  )
 }
 
 // ─── Downloads ────────────────────────────────────────────────────────────────
@@ -148,8 +185,7 @@ function registerDownloadHandlers(): void {
   ipcMain.handle(IPC.DOWNLOAD_START, async (_e, request: DownloadRequest) => {
     try {
       // Server-side URL validation
-      const ytRegex = /^(https?:\/\/)?(www\.|music\.)?(youtube\.com|youtu\.be)\/(watch\?v=|playlist\?list=|v\/|embed\/)?([a-zA-Z0-9_-]{11}|[a-zA-Z0-9_-]{34})(&.*)?$/
-      if (!request.url || !ytRegex.test(request.url)) {
+      if (!request.url || !isValidYoutubeUrl(request.url)) {
         return { success: false, error: 'Invalid YouTube URL' }
       }
 
@@ -164,7 +200,7 @@ function registerDownloadHandlers(): void {
     downloadManager.cancel(id)
     return { success: true }
   })
-  
+
   ipcMain.handle(IPC.DOWNLOAD_PAUSE, (_e, id?: string) => {
     if (id) downloadManager.pause(id)
     else downloadManager.pauseAll()
@@ -198,6 +234,11 @@ function registerSettingsHandlers(): void {
   ipcMain.handle(IPC.SETTINGS_GET, (_e, key: string) => getSetting(key as never))
 
   ipcMain.handle(IPC.SETTINGS_SET, (_e, key: string, value: unknown) => {
+    if (key === 'theme') {
+      if (value !== 'light' && value !== 'dark' && value !== 'system')
+        throw new Error('Invalid theme')
+      nativeTheme.themeSource = value
+    }
     setSetting(key as never, value as never)
     return { success: true }
   })
@@ -215,18 +256,18 @@ function registerSystemHandlers(): void {
   })
 
   ipcMain.handle(IPC.SYSTEM_CHOOSE_DIRECTORY, async (e) => {
-    const win = require('electron').BrowserWindow.fromWebContents(e.sender)
+    const win = BrowserWindow.fromWebContents(e.sender)
     const result = await dialog.showOpenDialog(win!, {
-      properties: ['openDirectory'],
+      properties: ['openDirectory']
     })
     return result.canceled ? null : result.filePaths[0]
   })
 
   ipcMain.handle(IPC.SYSTEM_CHOOSE_FILE, async (e) => {
-    const win = require('electron').BrowserWindow.fromWebContents(e.sender)
+    const win = BrowserWindow.fromWebContents(e.sender)
     const result = await dialog.showOpenDialog(win!, {
       properties: ['openFile'],
-      filters: [{ name: 'Executable', extensions: ['exe', ''] }],
+      filters: [{ name: 'Executable', extensions: ['exe', ''] }]
     })
     return result.canceled ? null : result.filePaths[0]
   })
@@ -258,12 +299,12 @@ function registerSystemHandlers(): void {
   })
 
   ipcMain.handle(IPC.SYSTEM_MINIMIZE_WINDOW, (e) => {
-    const win = require('electron').BrowserWindow.fromWebContents(e.sender)
+    const win = BrowserWindow.fromWebContents(e.sender)
     win?.minimize()
   })
 
   ipcMain.handle(IPC.SYSTEM_MAXIMIZE_WINDOW, (e) => {
-    const win = require('electron').BrowserWindow.fromWebContents(e.sender)
+    const win = BrowserWindow.fromWebContents(e.sender)
     if (win?.isMaximized()) {
       win.unmaximize()
     } else {
@@ -272,7 +313,7 @@ function registerSystemHandlers(): void {
   })
 
   ipcMain.handle(IPC.SYSTEM_CLOSE_WINDOW, (e) => {
-    const win = require('electron').BrowserWindow.fromWebContents(e.sender)
+    const win = BrowserWindow.fromWebContents(e.sender)
     win?.close()
   })
 }

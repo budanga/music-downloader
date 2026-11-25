@@ -1,21 +1,31 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../components/ui/Toast'
-import type { AppSettings } from '../../shared/types'
+import SectionCover from '../components/layout/SectionCover'
+import { ART } from '../components/motion/art'
+import { BrailleSpinner } from '../components/motion/Motion'
+import type { AppSettings } from '../../../shared/types'
+
+type YtdlpStatus = { available: boolean; version?: string; error?: string }
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null)
-  const [ytdlpStatus, setYtdlpStatus] = useState<{ available: boolean; version?: string; error?: string } | null>(null)
+  const [ytdlp, setYtdlp] = useState<YtdlpStatus | null>(null)
+  const [updating, setUpdating] = useState(false)
   const { show } = useToast()
 
   useEffect(() => {
     window.api.settings.getAll().then(setSettings)
-    window.api.system.checkYtdlp().then(setYtdlpStatus)
+    window.api.system.checkYtdlp().then(setYtdlp)
   }, [])
 
-  const save = async <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+  const save = async <K extends keyof AppSettings>(
+    key: K,
+    value: AppSettings[K],
+    quiet = false
+  ) => {
     await window.api.settings.set(key, value)
-    setSettings((s) => s ? { ...s, [key]: value } : s)
-    show('Setting saved', 'success')
+    setSettings((s) => (s ? { ...s, [key]: value } : s))
+    if (!quiet) show('Ajuste guardado', 'success')
   }
 
   const chooseDir = async () => {
@@ -24,145 +34,242 @@ export default function SettingsPage() {
   }
 
   const updateYtdlp = async () => {
-    show('Updating yt-dlp…', 'info')
+    setUpdating(true)
     const result = await window.api.system.updateYtdlp()
-    if (result.success) { show('yt-dlp updated!', 'success'); window.api.system.checkYtdlp().then(setYtdlpStatus) }
-    else show(result.error || 'Update failed', 'error')
+    setUpdating(false)
+    if (result.success) {
+      show('yt-dlp actualizado', 'success')
+      window.api.system.checkYtdlp().then(setYtdlp)
+    } else show(result.error || 'No se pudo actualizar yt-dlp', 'error')
   }
 
-  if (!settings) return <div className="empty-state"><div className="pulse">Loading…</div></div>
+  const art = (
+    <SectionCover
+      title="Ajustes"
+      art={ART.settings}
+      pills={
+        settings
+          ? [
+              [ytdlp?.available ? (ytdlp.version ?? '') : '—', 'yt-dlp'],
+              [settings.audioFormat.toUpperCase(), 'formato']
+            ]
+          : []
+      }
+    />
+  )
+
+  if (!settings)
+    return (
+      <div>
+        {art}
+        <div className="card loading">
+          <BrailleSpinner />
+          Cargando ajustes…
+        </div>
+      </div>
+    )
+
+  const toggle = (
+    key: 'embedThumbnail' | 'embedMetadata' | 'showNotifications' | 'minimizeToTray',
+    label: string
+  ) => (
+    <button
+      className={`sw${settings[key] ? ' on' : ''}`}
+      role="switch"
+      aria-checked={settings[key]}
+      aria-label={label}
+      onClick={() => save(key, !settings[key])}
+    />
+  )
+  const seg = <K extends 'audioFormat' | 'audioQuality' | 'theme'>(
+    key: K,
+    options: Array<[AppSettings[K], string]>,
+    label: string
+  ) => (
+    <div className="seg" role="group" aria-label={label}>
+      {options.map(([value, text]) => (
+        <button
+          key={value}
+          className={settings[key] === value ? 'on' : ''}
+          onClick={() => save(key, value)}
+        >
+          {text}
+        </button>
+      ))}
+    </div>
+  )
+  const par = settings.maxConcurrentDownloads
 
   return (
     <div>
-      <div className="page-header"><h1 className="page-title">Settings</h1></div>
-      <div className="page-body" style={{ maxWidth: 700 }}>
+      {art}
 
-        {/* Download */}
-        <div className="settings-section">
-          <div className="settings-section__title">Downloads</div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Download Location</div>
-              <div className="settings-row__desc">{settings.downloadPath}</div>
-            </div>
-            <button className="btn-ghost" onClick={chooseDir}>Change…</button>
+      <div className="card sgrp">
+        <h3>Apariencia</h3>
+        <div className="srow">
+          <div>
+            <b>Tema</b>
+            <small>«Sistema» sigue el modo claro u oscuro de Windows</small>
           </div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Audio Format</div>
-              <div className="settings-row__desc">Default format for all downloads</div>
-            </div>
-            <select className="input" style={{ width: 120 }} value={settings.audioFormat}
-              onChange={(e) => save('audioFormat', e.target.value as AppSettings['audioFormat'])}>
-              <option value="mp3">MP3</option>
-              <option value="flac">FLAC</option>
-              <option value="m4a">M4A</option>
-            </select>
-          </div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Audio Quality</div>
-            </div>
-            <select className="input" style={{ width: 120 }} value={settings.audioQuality}
-              onChange={(e) => save('audioQuality', e.target.value as AppSettings['audioQuality'])}>
-              <option value="best">Best</option>
-              <option value="320k">320 kbps</option>
-              <option value="256k">256 kbps</option>
-              <option value="192k">192 kbps</option>
-              <option value="128k">128 kbps</option>
-            </select>
-          </div>
-          <div className="settings-row">
-            <div style={{ flex: 1 }}>
-              <div className="settings-row__label">Max Concurrent Downloads</div>
-              <div className="settings-row__desc">Maximum simultaneous downloads (1-20). Set to 0 for unlimited (soft-capped at 15 for stability).</div>
-            </div>
-            <input
-              className="input"
-              type="number" min={0} max={20} style={{ width: 80 }}
-              value={settings.maxConcurrentDownloads}
-              onChange={(e) => save('maxConcurrentDownloads', parseInt(e.target.value) || 0)}
-            />
-          </div>
+          {seg(
+            'theme',
+            [
+              ['system', 'Sistema'],
+              ['light', 'Claro'],
+              ['dark', 'Oscuro']
+            ],
+            'Tema'
+          )}
         </div>
+      </div>
 
-        {/* Metadata */}
-        <div className="settings-section">
-          <div className="settings-section__title">Metadata</div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Embed Thumbnail</div>
-              <div className="settings-row__desc">Embed album art into audio files</div>
-            </div>
-            <input type="checkbox" checked={settings.embedThumbnail}
-              onChange={(e) => save('embedThumbnail', e.target.checked)} style={{ width: 18, height: 18 }} />
+      <div className="card sgrp">
+        <h3>Descargas</h3>
+        <div className="srow">
+          <div>
+            <b>Carpeta</b>
+            <small className="mono">{settings.downloadPath}</small>
           </div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Embed Metadata</div>
-              <div className="settings-row__desc">Embed title, artist, album tags</div>
-            </div>
-            <input type="checkbox" checked={settings.embedMetadata}
-              onChange={(e) => save('embedMetadata', e.target.checked)} style={{ width: 18, height: 18 }} />
-          </div>
+          <button className="btn ghost sm" onClick={chooseDir}>
+            Cambiar…
+          </button>
         </div>
-
-        {/* Tools */}
-        <div className="settings-section">
-          <div className="settings-section__title">Tools</div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">yt-dlp</div>
-              <div className="settings-row__desc" style={{ color: ytdlpStatus?.available ? 'var(--green)' : 'var(--red)' }}>
-                {ytdlpStatus?.available ? `✓ ${ytdlpStatus.version}` : `✗ Not found — ${ytdlpStatus?.error ?? ''}`}
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn-ghost" onClick={updateYtdlp}>Update</button>
-            </div>
+        <div className="srow">
+          <div>
+            <b>Formato</b>
+            <small>Para todas las descargas</small>
           </div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">yt-dlp Path</div>
-            </div>
-            <input
-              className="input" style={{ maxWidth: 260 }}
-              value={settings.ytdlpPath}
-              onChange={(e) => save('ytdlpPath', e.target.value)}
-              onBlur={() => window.api.system.checkYtdlp().then(setYtdlpStatus)}
-            />
-          </div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">FFmpeg Path</div>
-            </div>
-            <input
-              className="input" style={{ maxWidth: 260 }}
-              value={settings.ffmpegPath}
-              onChange={(e) => save('ffmpegPath', e.target.value)}
-            />
-          </div>
+          {seg(
+            'audioFormat',
+            [
+              ['mp3', 'MP3'],
+              ['flac', 'FLAC'],
+              ['m4a', 'M4A']
+            ],
+            'Formato'
+          )}
         </div>
-
-        {/* App */}
-        <div className="settings-section">
-          <div className="settings-section__title">Application</div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Show Notifications</div>
-            </div>
-            <input type="checkbox" checked={settings.showNotifications}
-              onChange={(e) => save('showNotifications', e.target.checked)} style={{ width: 18, height: 18 }} />
+        <div className="srow">
+          <div>
+            <b>Calidad</b>
           </div>
-          <div className="settings-row">
-            <div>
-              <div className="settings-row__label">Minimize to Tray</div>
-            </div>
-            <input type="checkbox" checked={settings.minimizeToTray}
-              onChange={(e) => save('minimizeToTray', e.target.checked)} style={{ width: 18, height: 18 }} />
-          </div>
+          {seg(
+            'audioQuality',
+            [
+              ['best', 'Máxima'],
+              ['320k', '320'],
+              ['256k', '256'],
+              ['192k', '192'],
+              ['128k', '128']
+            ],
+            'Calidad'
+          )}
         </div>
+        <div className="srow">
+          <div>
+            <b>Descargas simultáneas</b>
+            <small>De 1 a 20. «Sin límite» llega hasta 15 a la vez.</small>
+          </div>
+          <span className="step">
+            <button
+              className="ib"
+              aria-label="Menos"
+              disabled={par <= 0}
+              onClick={() => save('maxConcurrentDownloads', Math.max(0, par - 1))}
+            >
+              −
+            </button>
+            <b>{par === 0 ? 'Sin límite' : par}</b>
+            <button
+              className="ib"
+              aria-label="Más"
+              disabled={par >= 20}
+              onClick={() => save('maxConcurrentDownloads', Math.min(20, par + 1))}
+            >
+              +
+            </button>
+          </span>
+        </div>
+      </div>
 
+      <div className="card sgrp">
+        <h3>Metadatos</h3>
+        <div className="srow">
+          <div>
+            <b>Tapa dentro del archivo</b>
+          </div>
+          {toggle('embedThumbnail', 'Tapa dentro del archivo')}
+        </div>
+        <div className="srow">
+          <div>
+            <b>Etiquetas de título, artista y disco</b>
+          </div>
+          {toggle('embedMetadata', 'Etiquetas de título, artista y disco')}
+        </div>
+      </div>
+
+      <div className="card sgrp">
+        <h3>Herramientas</h3>
+        <div className="srow">
+          <div>
+            <b>yt-dlp</b>
+            {ytdlp === null ? (
+              <small>Comprobando…</small>
+            ) : ytdlp.available ? (
+              <small className="ok">✓ Versión {ytdlp.version}</small>
+            ) : (
+              <small className="bad-text">No se encontró. Revisá la ruta de abajo.</small>
+            )}
+          </div>
+          <button className="btn ghost sm" onClick={updateYtdlp} disabled={updating}>
+            {updating && <BrailleSpinner />}
+            {updating ? 'Actualizando…' : 'Actualizar'}
+          </button>
+        </div>
+        <div className="srow">
+          <div>
+            <b>
+              <label htmlFor="ytdlp-path">Ruta de yt-dlp</label>
+            </b>
+          </div>
+          <input
+            id="ytdlp-path"
+            className="field"
+            value={settings.ytdlpPath}
+            onChange={(e) => save('ytdlpPath', e.target.value, true)}
+            onBlur={() => window.api.system.checkYtdlp().then(setYtdlp)}
+          />
+        </div>
+        <div className="srow">
+          <div>
+            <b>
+              <label htmlFor="ffmpeg-path">Ruta de FFmpeg</label>
+            </b>
+          </div>
+          <input
+            id="ffmpeg-path"
+            className="field"
+            value={settings.ffmpegPath}
+            onChange={(e) => save('ffmpegPath', e.target.value, true)}
+          />
+        </div>
+      </div>
+
+      <div className="card sgrp">
+        <h3>Aplicación</h3>
+        <div className="srow">
+          <div>
+            <b>Avisos al terminar una descarga</b>
+          </div>
+          {toggle('showNotifications', 'Avisos al terminar una descarga')}
+        </div>
+        <div className="srow">
+          <div>
+            <b>Minimizar a la bandeja</b>
+            <small>Al cerrar la ventana, la app sigue en la bandeja del sistema</small>
+          </div>
+          {toggle('minimizeToTray', 'Minimizar a la bandeja')}
+        </div>
       </div>
     </div>
   )

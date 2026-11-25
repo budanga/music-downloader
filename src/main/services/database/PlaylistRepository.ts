@@ -1,5 +1,5 @@
 import { uuidv4 } from '../../utils/uuid'
-import { getDatabase } from './Database'
+import { getDatabase, runInTransaction } from './Database'
 import type { Playlist, PlaylistSong, Song } from '../../../shared/types'
 
 interface PlaylistRow {
@@ -47,7 +47,7 @@ function rowToPlaylist(row: PlaylistRow): Playlist {
     ytId: row.yt_id,
     songCount: row.song_count,
     dateCreated: row.date_created,
-    dateModified: row.date_modified,
+    dateModified: row.date_modified
   }
 }
 
@@ -74,11 +74,16 @@ function rowToPlaylistSong(row: PlaylistSongRow): PlaylistSong {
     dateAdded: row.date_added,
     lastPlayed: row.last_played,
     position: row.position,
-    playlistDateAdded: row.playlist_date_added,
+    playlistDateAdded: row.playlist_date_added
   }
 }
 
-export function createPlaylist(name: string, description?: string, thumbnail?: string, ytId?: string): Playlist {
+export function createPlaylist(
+  name: string,
+  description?: string,
+  thumbnail?: string,
+  ytId?: string
+): Playlist {
   const db = getDatabase()
   const id = uuidv4()
   const now = Date.now()
@@ -118,14 +123,26 @@ export function getPlaylistById(id: string): Playlist | null {
   return row ? rowToPlaylist(row) : null
 }
 
-export function updatePlaylist(id: string, updates: { name?: string; description?: string; thumbnail?: string }): void {
+export function updatePlaylist(
+  id: string,
+  updates: { name?: string; description?: string; thumbnail?: string }
+): void {
   const db = getDatabase()
   const fields: string[] = ['date_modified = ?']
   const values: unknown[] = [Date.now()]
 
-  if (updates.name !== undefined) { fields.push('name = ?'); values.push(updates.name) }
-  if (updates.description !== undefined) { fields.push('description = ?'); values.push(updates.description) }
-  if (updates.thumbnail !== undefined) { fields.push('thumbnail = ?'); values.push(updates.thumbnail) }
+  if (updates.name !== undefined) {
+    fields.push('name = ?')
+    values.push(updates.name)
+  }
+  if (updates.description !== undefined) {
+    fields.push('description = ?')
+    values.push(updates.description)
+  }
+  if (updates.thumbnail !== undefined) {
+    fields.push('thumbnail = ?')
+    values.push(updates.thumbnail)
+  }
 
   values.push(id)
   db.prepare(`UPDATE playlists SET ${fields.join(', ')} WHERE id = ?`).run(...values)
@@ -161,7 +178,9 @@ export function addSongToPlaylist(playlistId: string, songId: string): void {
   const db = getDatabase()
   // Find the next position
   const maxPos = db
-    .prepare(`SELECT COALESCE(MAX(position), -1) as maxpos FROM playlist_songs WHERE playlist_id = ?`)
+    .prepare(
+      `SELECT COALESCE(MAX(position), -1) as maxpos FROM playlist_songs WHERE playlist_id = ?`
+    )
     .get(playlistId) as { maxpos: number }
   const position = maxPos.maxpos + 1
 
@@ -181,7 +200,10 @@ export function removeSongFromPlaylist(playlistId: string, songId: string): void
 
   if (!removed) return
 
-  db.prepare(`DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?`).run(playlistId, songId)
+  db.prepare(`DELETE FROM playlist_songs WHERE playlist_id = ? AND song_id = ?`).run(
+    playlistId,
+    songId
+  )
 
   // Re-sequence positions after the removed one
   db.prepare(
@@ -192,33 +214,29 @@ export function removeSongFromPlaylist(playlistId: string, songId: string): void
   db.prepare(`UPDATE playlists SET date_modified = ? WHERE id = ?`).run(Date.now(), playlistId)
 }
 
-export function reorderPlaylistSong(playlistId: string, songId: string, newPosition: number): void {
+/**
+ * Moves a song to `newIndex` (0-based place in the playlist's current order) and renumbers
+ * every position 0..n-1, which also repairs gaps left by older data.
+ */
+export function reorderPlaylistSong(playlistId: string, songId: string, newIndex: number): void {
   const db = getDatabase()
-  const current = db
-    .prepare(`SELECT position FROM playlist_songs WHERE playlist_id = ? AND song_id = ?`)
-    .get(playlistId, songId) as { position: number } | undefined
+  const ids = (
+    db
+      .prepare(`SELECT song_id FROM playlist_songs WHERE playlist_id = ? ORDER BY position ASC`)
+      .all(playlistId) as { song_id: string }[]
+  ).map((r) => r.song_id)
 
-  if (!current) return
+  const from = ids.indexOf(songId)
+  if (from === -1) return
+  const to = Math.max(0, Math.min(ids.length - 1, Math.floor(newIndex)))
+  if (from === to) return
+  ids.splice(to, 0, ids.splice(from, 1)[0])
 
-  const oldPos = current.position
-
-  const reorder = db.transaction(() => {
-    if (newPosition > oldPos) {
-      // Moving down: shift items between old+1 and newPosition up by 1
-      db.prepare(
-        `UPDATE playlist_songs SET position = position - 1
-         WHERE playlist_id = ? AND position > ? AND position <= ?`
-      ).run(playlistId, oldPos, newPosition)
-    } else {
-      // Moving up: shift items between newPosition and old-1 down by 1
-      db.prepare(
-        `UPDATE playlist_songs SET position = position + 1
-         WHERE playlist_id = ? AND position >= ? AND position < ?`
-      ).run(playlistId, newPosition, oldPos)
-    }
-    db.prepare(`UPDATE playlist_songs SET position = ? WHERE playlist_id = ? AND song_id = ?`).run(newPosition, playlistId, songId)
+  runInTransaction(() => {
+    const setPos = db.prepare(
+      `UPDATE playlist_songs SET position = ? WHERE playlist_id = ? AND song_id = ?`
+    )
+    ids.forEach((id, i) => setPos.run(i, playlistId, id))
     db.prepare(`UPDATE playlists SET date_modified = ? WHERE id = ?`).run(Date.now(), playlistId)
   })
-
-  reorder()
 }

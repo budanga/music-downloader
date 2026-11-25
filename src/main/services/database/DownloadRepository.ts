@@ -1,9 +1,27 @@
 import { getDatabase } from './Database'
 import type { DownloadItem } from '../../../shared/download.types'
 
+interface DownloadRow {
+  id: string
+  url: string
+  title: string
+  status: DownloadItem['status']
+  error: string | null
+  song_id: string | null
+  timestamp: number
+  thumbnail: string | null
+  uploader: string | null
+  playlist_id: string | null
+  is_playlist: number
+  playlist_total: number
+  playlist_done: number
+  track_number: number | null
+}
+
 export function upsertDownload(item: DownloadItem): void {
   const db = getDatabase()
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO download_history (
       id, url, title, status, error, song_id, timestamp,
       thumbnail, uploader, playlist_id, is_playlist,
@@ -17,7 +35,8 @@ export function upsertDownload(item: DownloadItem): void {
       title = excluded.title,
       thumbnail = excluded.thumbnail,
       uploader = excluded.uploader
-  `).run(
+  `
+  ).run(
     item.id,
     item.url,
     item.title,
@@ -37,12 +56,14 @@ export function upsertDownload(item: DownloadItem): void {
 
 export function getAllDownloads(): DownloadItem[] {
   const db = getDatabase()
-  const rows = db.prepare(`SELECT * FROM download_history ORDER BY timestamp DESC`).all() as any[]
+  const rows = db
+    .prepare(`SELECT * FROM download_history ORDER BY timestamp DESC`)
+    .all() as DownloadRow[]
   return rows.map((r) => ({
     id: r.id,
     url: r.url,
     title: r.title,
-    status: r.status as any,
+    status: r.status,
     error: r.error,
     songId: r.song_id,
     addedAt: r.timestamp,
@@ -52,7 +73,7 @@ export function getAllDownloads(): DownloadItem[] {
     isPlaylist: Boolean(r.is_playlist),
     playlistTotal: r.playlist_total,
     playlistDone: r.playlist_done,
-    trackNumber: r.track_number,
+    trackNumber: r.track_number ?? undefined,
     progress: r.status === 'completed' ? 100 : 0,
     speed: null,
     eta: null

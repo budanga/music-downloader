@@ -3,12 +3,18 @@ import { uuidv4 } from '../../utils/uuid'
 import path from 'path'
 import fs from 'fs'
 import { BrowserWindow } from 'electron'
-import { YtDlpWrapper } from './YtDlpWrapper'
+import { YtDlpWrapper, killProcessTree } from './YtDlpWrapper'
 import { getAllSettings } from '../database/SettingsRepository'
 import { insertSong, getSongByYtId, upsertArtist, upsertAlbum } from '../database/SongRepository'
 import { addSongToPlaylist, createPlaylist } from '../database/PlaylistRepository'
 import { IPC } from '../../../shared/ipc.channels'
-import type { DownloadItem, DownloadProgress, DownloadRequest, YtDlpMetadata } from '../../../shared/download.types'
+import type {
+  DownloadItem,
+  DownloadProgress,
+  DownloadRequest,
+  DownloadStatus,
+  YtDlpMetadata
+} from '../../../shared/download.types'
 import type { Song } from '../../../shared/types'
 
 /**
@@ -22,6 +28,7 @@ export class DownloadManager extends EventEmitter {
   private abortControllers: Map<string, AbortController> = new Map()
   private mainWindow: BrowserWindow | null = null
   private isPausedAll = false
+  private isShuttingDown = false
 
   constructor() {
     super()
@@ -32,6 +39,7 @@ export class DownloadManager extends EventEmitter {
   }
 
   private send(channel: string, data: unknown): void {
+    if (this.isShuttingDown) return
     this.mainWindow?.webContents?.send(channel, data)
   }
 
@@ -77,14 +85,16 @@ export class DownloadManager extends EventEmitter {
         isPlaylist: true,
         playlistTotal: 0,
         playlistDone: 0,
-        addedAt: Date.now(),
+        addedAt: Date.now()
       }
       this.queue.set(id, item)
       ids.push(id)
       this.sendProgress(item)
       const abortController = new AbortController()
       this.abortControllers.set(id, abortController)
-      this.processPlaylist(id, request, ytdlp, settings, abortController.signal).catch((e) => this.markFailed(id, String(e)))
+      this.processPlaylist(id, request, ytdlp, abortController.signal).catch((e) =>
+        this.markFailed(id, String(e))
+      )
     } else {
       const id = uuidv4()
       const item: DownloadItem = {
@@ -103,7 +113,7 @@ export class DownloadManager extends EventEmitter {
         isPlaylist: false,
         playlistTotal: 1,
         playlistDone: 0,
-        addedAt: Date.now(),
+        addedAt: Date.now()
       }
       this.queue.set(id, item)
       ids.push(id)
@@ -118,7 +128,6 @@ export class DownloadManager extends EventEmitter {
     masterId: string,
     request: DownloadRequest,
     ytdlp: YtDlpWrapper,
-    settings: ReturnType<typeof getAllSettings>,
     signal?: AbortSignal
   ): Promise<void> {
     let entries: YtDlpMetadata[]
@@ -158,7 +167,10 @@ export class DownloadManager extends EventEmitter {
     for (let i = 0; i < entries.length; i++) {
       const entry = entries[i]
       const id = uuidv4()
-      const url = entry.webpage_url || entry.url || (entry.id ? `https://www.youtube.com/watch?v=${entry.id}` : '')
+      const url =
+        entry.webpage_url ||
+        entry.url ||
+        (entry.id ? `https://www.youtube.com/watch?v=${entry.id}` : '')
       if (i === 0) console.log(`[DEBUG] processPlaylist first entry url: ${url}`, entry)
       const item: DownloadItem = {
         id,
@@ -172,12 +184,12 @@ export class DownloadManager extends EventEmitter {
         eta: null,
         error: null,
         songId: null,
-        playlistId,
+        playlistId: playlistId ?? null,
         isPlaylist: false,
         playlistTotal: 1,
         playlistDone: 0,
         addedAt: Date.now(),
-        trackNumber: i + 1,
+        trackNumber: i + 1
       }
       this.queue.set(id, item)
     }
@@ -190,7 +202,15 @@ export class DownloadManager extends EventEmitter {
     this.scheduleNext()
   }
 
+  /** Kill every running yt-dlp process and stop scheduling. Called when the app quits. */
+  shutdown(): void {
+    this.isShuttingDown = true
+    for (const proc of this.processes.values()) killProcessTree(proc)
+    for (const abort of this.abortControllers.values()) abort.abort()
+  }
+
   private scheduleNext(): void {
+    if (this.isShuttingDown) return
     const settings = getAllSettings()
     let maxConcurrent = settings.maxConcurrentDownloads ?? 2
     if (maxConcurrent === 0) maxConcurrent = 15
@@ -198,7 +218,7 @@ export class DownloadManager extends EventEmitter {
     if (this.active.size < maxConcurrent) {
       const next = Array.from(this.queue.values()).find((i) => i.status === 'queued')
       if (next) {
-        this.startDownload(next.id).catch(err => {
+        this.startDownload(next.id).catch((err) => {
           console.error(`[DEBUG] Error in startDownload for ${next.id}:`, err)
         })
         // Stagger the next check slightly to avoid burst requests
@@ -228,13 +248,14 @@ export class DownloadManager extends EventEmitter {
       // Allow cancellation during metadata fetch
       const abortController = new AbortController()
       this.abortControllers.set(id, abortController)
-      
+
       // We need to modify YtDlpWrapper to support AbortController or just check status after
       const meta = await ytdlp.getMetadata(item.url, abortController.signal)
       this.abortControllers.delete(id)
-      
+
       // Check if it was cancelled while we were awaiting
-      if (item.status === 'cancelled' || item.status === 'paused') {
+      const status = item.status as DownloadStatus
+      if (status === 'cancelled' || status === 'paused') {
         this.active.delete(id)
         return
       }
@@ -246,6 +267,13 @@ export class DownloadManager extends EventEmitter {
       // Check duplicate by yt_id
       const existing = getSongByYtId(meta.id)
       if (existing) {
+        if (item.playlistId) {
+          try {
+            addSongToPlaylist(item.playlistId, existing.id)
+          } catch {
+            /* ignore */
+          }
+        }
         this.markCompleted(id, existing)
         return
       }
@@ -253,13 +281,14 @@ export class DownloadManager extends EventEmitter {
       item.status = 'downloading'
       this.sendProgress(item)
 
-      const downloadPath = settings.downloadPath || path.join(process.env.USERPROFILE || '', 'Downloads', 'Music')
+      const downloadPath =
+        settings.downloadPath || path.join(process.env.USERPROFILE || '', 'Downloads', 'Music')
       const tempPath = path.join(downloadPath, `.temp_${id}`)
       if (!fs.existsSync(tempPath)) fs.mkdirSync(tempPath, { recursive: true })
 
       const format = settings.audioFormat
 
-      const { process: proc, getOutputPath } = ytdlp.download({
+      const { process: proc } = ytdlp.download({
         url: item.url,
         outputDir: tempPath,
         format,
@@ -271,21 +300,23 @@ export class DownloadManager extends EventEmitter {
           item.eta = eta
           item.status = progress >= 100 ? 'converting' : 'downloading'
           this.sendProgress(item)
-        },
+        }
       })
 
       this.processes.set(id, proc)
 
       await new Promise<void>((resolve, reject) => {
         proc.on('close', (code) => {
-          if (code === 0 || code === null) resolve()
+          if (code === 0) resolve()
+          // null = process was killed (pause/cancel/quit): never treat partial output as a finished download
+          else if (code === null) reject(new Error('Aborted'))
           else reject(new Error(`yt-dlp exited with code ${code}`))
         })
         proc.on('error', reject)
       })
 
       // Find the downloaded file in the temp directory
-      const files = fs.readdirSync(tempPath).filter(f => !f.startsWith('.'))
+      const files = fs.readdirSync(tempPath).filter((f) => !f.startsWith('.'))
       if (files.length === 0) {
         throw new Error('Output file not found in temp directory after download')
       }
@@ -301,42 +332,56 @@ export class DownloadManager extends EventEmitter {
       // Upsert artist & album
       let trackArtistName = meta.artist ?? meta.uploader ?? 'Unknown Artist'
       let albumArtistName = meta.album_artist
-      
+
       // If we don't have an explicit album_artist, infer it by removing "feat." etc.
       if (!albumArtistName) {
-        albumArtistName = trackArtistName.split(/\s+feat\.|\s+ft\.|\s+featuring\s+|,\s*|\s*&\s*|\s+x\s+|\s+with\s+/i)[0].trim()
+        albumArtistName = trackArtistName
+          .split(/\s+feat\.|\s+ft\.|\s+featuring\s+|,\s*|\s*&\s*|\s+x\s+|\s+with\s+/i)[0]
+          .trim()
         if (!albumArtistName) albumArtistName = trackArtistName
       }
 
       // To avoid creating dozens of artists for collaborations, we just assign the song to the main artist.
       trackArtistName = albumArtistName
-      
+
       const trackArtistId = trackArtistName ? upsertArtist(trackArtistName, meta.thumbnail) : null
       const albumArtistId = albumArtistName ? upsertArtist(albumArtistName, meta.thumbnail) : null
-      
-      const albumId = meta.album && albumArtistId
-        ? upsertAlbum(meta.album, albumArtistId, meta.release_year ?? null, meta.thumbnail ?? null)
-        : null
+
+      const albumId =
+        meta.album && albumArtistId
+          ? upsertAlbum(
+              meta.album,
+              albumArtistId,
+              meta.release_year ?? null,
+              meta.thumbnail ?? null
+            )
+          : null
 
       // Final destination path
-      const finalDir = path.join(downloadPath, sanitizeName(trackArtistName), sanitizeName(meta.album || 'Unknown Album'))
+      const finalDir = path.join(
+        downloadPath,
+        sanitizeName(trackArtistName),
+        sanitizeName(meta.album || 'Unknown Album')
+      )
       if (!fs.existsSync(finalDir)) fs.mkdirSync(finalDir, { recursive: true })
-      
+
       const finalPath = path.join(finalDir, path.basename(outputPath))
       console.log(`[DEBUG] Moving file from ${outputPath} to ${finalPath}`)
-      
+
       // Move file
       try {
         fs.renameSync(outputPath, finalPath)
-      } catch (err) {
+      } catch {
         fs.copyFileSync(outputPath, finalPath)
         fs.unlinkSync(outputPath)
       }
-      
+
       // Clean up temp folder
       try {
         fs.rmSync(tempPath, { recursive: true, force: true })
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
 
       // Save song to DB
       const song = insertSong({
@@ -352,25 +397,29 @@ export class DownloadManager extends EventEmitter {
         year: meta.release_year ?? null,
         bitrate: null,
         format,
-        fileSize: stat.size,
+        fileSize: stat.size
       })
 
       // Add to playlist if specified
       if (item.playlistId) {
         try {
           addSongToPlaylist(item.playlistId, song.id)
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
       }
 
       this.markCompleted(id, song)
-    } catch (e: any) {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
       const item = this.queue.get(id)
-      const isIntentional = e.message === 'Aborted' && (item?.status === 'paused' || item?.status === 'cancelled')
-      
+      // A killed process exits with code 1 on Windows, so go by the item status, not the message
+      const isIntentional = item?.status === 'paused' || item?.status === 'cancelled'
+
       if (!isIntentional) {
         console.error(`[DEBUG] [DownloadManager] Error during download for ${item?.url || id}:`, e)
       }
-      this.markFailed(id, e.message || String(e))
+      this.markFailed(id, message)
     }
   }
 
@@ -414,15 +463,13 @@ export class DownloadManager extends EventEmitter {
     const proc = this.processes.get(id)
     if (proc) {
       try {
-        // On Windows, sometimes we need to be more aggressive or use different methods
-        // but for now let's try standard kill. 
-        proc.kill('SIGTERM')
+        killProcessTree(proc)
       } catch (e) {
         console.error(`[DEBUG] Failed to kill process for ${id}:`, e)
       }
       this.processes.delete(id)
     }
-    
+
     // Also cancel pending metadata fetch
     const abort = this.abortControllers.get(id)
     if (abort) {
@@ -445,7 +492,7 @@ export class DownloadManager extends EventEmitter {
 
     const proc = this.processes.get(id)
     if (proc) {
-      proc.kill('SIGTERM')
+      killProcessTree(proc)
       this.processes.delete(id)
     }
 
@@ -502,8 +549,11 @@ export class DownloadManager extends EventEmitter {
       this.sendProgress(item)
       const settings = getAllSettings()
       const ytdlp = new YtDlpWrapper(settings.ytdlpPath, settings.ffmpegPath)
-      this.processPlaylist(id, { url: item.url, playlistId: item.playlistId ?? undefined }, ytdlp, settings)
-        .catch((e) => this.markFailed(id, String(e)))
+      this.processPlaylist(
+        id,
+        { url: item.url, playlistId: item.playlistId ?? undefined },
+        ytdlp
+      ).catch((e) => this.markFailed(id, String(e)))
       return
     }
 
@@ -526,7 +576,7 @@ export class DownloadManager extends EventEmitter {
       uploader: item.uploader,
       playlistTotal: item.playlistTotal,
       playlistDone: item.playlistDone,
-      trackNumber: item.trackNumber,
+      trackNumber: item.trackNumber
     }
     this.send(IPC.DOWNLOAD_PROGRESS, progress)
   }

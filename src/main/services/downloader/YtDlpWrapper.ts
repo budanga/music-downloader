@@ -31,19 +31,25 @@ export class YtDlpWrapper {
         '--no-playlist',
         '--no-warnings',
         '--quiet',
-        '--retries', '5',
-        '--fragment-retries', '5',
-        url,
+        '--retries',
+        '5',
+        '--fragment-retries',
+        '5',
+        url
       ]
 
       let output = ''
       const proc = spawn(this.ytdlpPath, args)
 
-      proc.stdout.on('data', (chunk: Buffer) => { output += chunk.toString() })
-      proc.stderr.on('data', (_chunk: Buffer) => { /* ignore warnings */ })
+      proc.stdout.on('data', (chunk: Buffer) => {
+        output += chunk.toString()
+      })
+      proc.stderr.on('data', () => {
+        /* ignore warnings */
+      })
 
       const onAbort = () => {
-        proc.kill()
+        killProcessTree(proc)
         reject(new Error('Aborted'))
       }
       signal?.addEventListener('abort', onAbort)
@@ -57,10 +63,17 @@ export class YtDlpWrapper {
         try {
           const lines = output.trim().split('\n').filter(Boolean)
           if (lines.length === 0) throw new Error('No output from yt-dlp')
-          console.log(`[DEBUG yt-dlp] getMetadata success. lines: ${lines.length}, first line length: ${lines[0].length}`)
+          console.log(
+            `[DEBUG yt-dlp] getMetadata success. lines: ${lines.length}, first line length: ${lines[0].length}`
+          )
           resolve(JSON.parse(lines[0]) as YtDlpMetadata)
         } catch (e) {
-          console.error(`[DEBUG yt-dlp] getMetadata parse error:`, e, '\nRaw output start:', output.substring(0, 200))
+          console.error(
+            `[DEBUG yt-dlp] getMetadata parse error:`,
+            e,
+            '\nRaw output start:',
+            output.substring(0, 200)
+          )
           reject(new Error(`Failed to parse yt-dlp metadata: ${String(e)}`))
         }
       })
@@ -83,19 +96,25 @@ export class YtDlpWrapper {
         '--no-warnings',
         '--quiet',
         '--flat-playlist',
-        '--retries', '5',
-        '--fragment-retries', '5',
-        url,
+        '--retries',
+        '5',
+        '--fragment-retries',
+        '5',
+        url
       ]
 
       let output = ''
       const proc = spawn(this.ytdlpPath, args)
 
-      proc.stdout.on('data', (chunk: Buffer) => { output += chunk.toString() })
-      proc.stderr.on('data', (_chunk: Buffer) => { /* ignore */ })
+      proc.stdout.on('data', (chunk: Buffer) => {
+        output += chunk.toString()
+      })
+      proc.stderr.on('data', () => {
+        /* ignore */
+      })
 
       const onAbort = () => {
-        proc.kill()
+        killProcessTree(proc)
         reject(new Error('Aborted'))
       }
       signal?.addEventListener('abort', onAbort)
@@ -114,7 +133,12 @@ export class YtDlpWrapper {
           const entries = lines.map((line) => JSON.parse(line) as YtDlpMetadata)
           resolve(entries)
         } catch (e) {
-          console.error(`[DEBUG yt-dlp] getPlaylistMetadata parse error:`, e, '\nRaw output start:', output.substring(0, 200))
+          console.error(
+            `[DEBUG yt-dlp] getPlaylistMetadata parse error:`,
+            e,
+            '\nRaw output start:',
+            output.substring(0, 200)
+          )
           reject(new Error(`Failed to parse playlist metadata: ${String(e)}`))
         }
       })
@@ -153,20 +177,27 @@ export class YtDlpWrapper {
     const args: string[] = [
       '--no-playlist',
       '--extract-audio',
-      '--audio-format', format,
-      '--audio-quality', audioQuality,
+      '--audio-format',
+      format,
+      '--audio-quality',
+      audioQuality,
       '--embed-thumbnail',
       '--embed-metadata',
       '--add-metadata',
-      '--parse-metadata', 'description:(?P<meta_comment>)',
-      '--ffmpeg-location', ffmpeg,
-      '--output', outputTemplate,
-      '--newline',    // one progress line per update
+      '--parse-metadata',
+      'description:(?P<meta_comment>)',
+      '--ffmpeg-location',
+      ffmpeg,
+      '--output',
+      outputTemplate,
+      '--newline', // one progress line per update
       '--progress',
       '--no-warnings',
-      '--retries', '5',
-      '--fragment-retries', '5',
-      url,
+      '--retries',
+      '5',
+      '--fragment-retries',
+      '5',
+      url
     ]
 
     let lastOutputPath = ''
@@ -218,7 +249,7 @@ export class YtDlpWrapper {
 
     return {
       process: proc,
-      getOutputPath: () => lastOutputPath,
+      getOutputPath: () => lastOutputPath
     }
   }
 
@@ -231,13 +262,20 @@ export class YtDlpWrapper {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.ytdlpPath, ['--version'])
       let output = ''
-      proc.stdout.on('data', (d: Buffer) => { output += d.toString() })
+      proc.stdout.on('data', (d: Buffer) => {
+        output += d.toString()
+      })
       proc.on('close', (code) => {
         if (code === 0) resolve(output.trim())
-        else reject(new Error('yt-dlp not found. Please install it or set the correct path in Settings.'))
+        else
+          reject(
+            new Error('yt-dlp not found. Please install it or set the correct path in Settings.')
+          )
       })
       proc.on('error', () => {
-        reject(new Error('yt-dlp not found. Please install it or set the correct path in Settings.'))
+        reject(
+          new Error('yt-dlp not found. Please install it or set the correct path in Settings.')
+        )
       })
     })
   }
@@ -249,8 +287,12 @@ export class YtDlpWrapper {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.ytdlpPath, ['-U'])
       let output = ''
-      proc.stdout.on('data', (d: Buffer) => { output += d.toString() })
-      proc.stderr.on('data', (d: Buffer) => { output += d.toString() })
+      proc.stdout.on('data', (d: Buffer) => {
+        output += d.toString()
+      })
+      proc.stderr.on('data', (d: Buffer) => {
+        output += d.toString()
+      })
       proc.on('close', (code) => {
         if (code === 0) resolve(output.trim())
         else reject(new Error(`yt-dlp update failed: ${output}`))
@@ -261,7 +303,9 @@ export class YtDlpWrapper {
 
   /** Detect if URL is a playlist */
   static isPlaylistUrl(url: string): boolean {
-    return /[?&]list=/.test(url) || /\/playlist\?/.test(url) || /music\.youtube\.com.*list=/.test(url)
+    return (
+      /[?&]list=/.test(url) || /\/playlist\?/.test(url) || /music\.youtube\.com.*list=/.test(url)
+    )
   }
 
   /** Validate that a URL looks like a YouTube/YT Music URL */
@@ -269,8 +313,21 @@ export class YtDlpWrapper {
     const patterns = [
       /^https?:\/\/(www\.|music\.)?youtube\.com\/watch\?/,
       /^https?:\/\/(www\.|music\.)?youtube\.com\/playlist\?/,
-      /^https?:\/\/youtu\.be\//,
+      /^https?:\/\/youtu\.be\//
     ]
     return patterns.some((p) => p.test(url.trim()))
+  }
+}
+
+/**
+ * Kill a process together with its children.
+ * The standalone yt-dlp.exe is a launcher that runs the real downloader (and ffmpeg) as
+ * child processes; on Windows `proc.kill()` only ends the launcher and the download keeps going.
+ */
+export function killProcessTree(proc: ChildProcess): void {
+  if (process.platform === 'win32' && proc.pid) {
+    spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'])
+  } else {
+    proc.kill()
   }
 }

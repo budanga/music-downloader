@@ -1,108 +1,111 @@
 import { useState } from 'react'
 import { useDownloadStore } from '../store/downloadStore'
 import { useToast } from '../components/ui/Toast'
-import type { DownloadItem } from '../../shared/download.types'
+import type { DownloadItem } from '../../../shared/download.types'
+import { isValidYoutubeUrl } from '../../../shared/url'
+import SectionCover from '../components/layout/SectionCover'
+import { ART, coverFn } from '../components/motion/art'
+import type { Tone } from '../components/motion/kit'
+import { BrailleSpinner, DecryptText, DitherBar, DitherCanvas } from '../components/motion/Motion'
 
-const statusLabel: Record<DownloadItem['status'], string> = {
-  queued: 'Queued',
-  fetching_info: 'Fetching info…',
-  downloading: 'Downloading',
-  converting: 'Converting…',
-  embedding_metadata: 'Embedding metadata…',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-  paused: 'Paused',
+type Status = DownloadItem['status']
+
+const LABEL: Record<Status, string> = {
+  queued: 'En cola',
+  fetching_info: 'Buscando datos de la canción',
+  downloading: 'Descargando',
+  converting: 'Convirtiendo',
+  embedding_metadata: 'Guardando etiquetas y tapa',
+  completed: 'En el archivo',
+  failed: 'No se pudo descargar',
+  cancelled: 'Cancelada',
+  paused: 'En pausa'
 }
+const WORKING: Status[] = ['fetching_info', 'downloading', 'converting', 'embedding_metadata']
+const FINISHED: Status[] = ['completed', 'failed', 'cancelled']
 
-const statusClass: Record<DownloadItem['status'], string> = {
-  queued: 'queued',
-  fetching_info: 'downloading',
-  downloading: 'downloading',
-  converting: 'converting',
-  embedding_metadata: 'converting',
-  completed: 'completed',
-  failed: 'failed',
-  cancelled: 'queued',
-  paused: 'queued',
-}
+const barColor = (s: Status): Tone =>
+  s === 'failed' || s === 'cancelled'
+    ? 'danger'
+    : s === 'completed'
+      ? 'success'
+      : s === 'paused'
+        ? 'warning'
+        : 'accent'
 
-function DownloadItemCard({ item }: { item: DownloadItem }) {
+/** The main process uses placeholder titles until yt-dlp answers. */
+const hasRealTitle = (item: DownloadItem) =>
+  !!item.title && !/^Fetching|^Playlist \(/.test(item.title)
+
+function JobCard({ item }: { item: DownloadItem }) {
   const { show } = useToast()
-  const fillClass = item.status === 'completed' ? 'done' : item.status === 'failed' ? 'error' : 'active'
+  const real = hasRealTitle(item)
+  const title = real ? item.title : item.url.replace(/^https?:\/\/(www\.)?/, '')
+  const remove = async () => {
+    if (!FINISHED.includes(item.status) && item.status !== 'paused')
+      await window.api.downloads.cancel(item.id)
+    useDownloadStore.getState().removeItem(item.id)
+  }
 
   return (
-    <div className="dl-item" style={{ marginBottom: 12 }}>
-      {item.thumbnail
-        ? <img src={item.thumbnail} alt="" className="dl-item__thumb" />
-        : <div className="dl-item__thumb" style={{ background: 'var(--bg-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>♫</div>
-      }
-      <div style={{ minWidth: 0 }}>
-        <div className="dl-item__title">{item.title || 'Unknown'}</div>
-        <div className="dl-item__sub">{item.uploader || ''}</div>
-        <div className="progress-bar">
-          <div
-            className={`progress-bar__fill progress-bar__fill--${fillClass}`}
-            style={{ width: `${item.progress}%` }}
-          />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-          <span className={`dl-item__status status-text--${statusClass[item.status]}`}>
-            {statusLabel[item.status]}
-            {item.status === 'downloading' && item.speed ? ` · ${item.speed}` : ''}
-            {item.status === 'downloading' && item.eta ? ` · ETA ${item.eta}` : ''}
-          </span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{Math.round(item.progress)}%</span>
-        </div>
-        {item.error && <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>{item.error}</div>}
+    <div className="card job">
+      <div className="job__th">
+        <DitherCanvas field={real ? coverFn(item.title) : ART.downloads} px={2} />
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-        <button
-          className="btn-icon"
-          style={{ color: 'var(--text-muted)', padding: 4, marginBottom: 4 }}
-          onClick={async () => {
-            if (['queued', 'downloading', 'fetching_info', 'converting'].includes(item.status)) {
-              await window.api.downloads.cancel(item.id)
-            }
-            useDownloadStore.getState().removeItem(item.id)
-          }}
-          title="Remove"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
-        </button>
-
+      <div style={{ minWidth: 0 }}>
+        <DecryptText className="t" text={title} ms={700} />
+        <div className="by">
+          {item.uploader || (real ? 'Artista desconocido' : 'Esperando los datos…')}
+        </div>
+        <div className="s">
+          <span>
+            {WORKING.includes(item.status) && <BrailleSpinner />} {LABEL[item.status]}
+            {item.status === 'downloading' && item.speed ? ` · ${item.speed}` : ''}
+            {item.status === 'downloading' && item.eta ? ` · faltan ${item.eta}` : ''}
+          </span>
+          <span className="mono">{Math.round(item.progress)}%</span>
+        </div>
+        <DitherBar className="pb" value={item.progress / 100} color={barColor(item.status)} />
+        {item.error && <div className="bad">{item.error}</div>}
+      </div>
+      <div className="ja">
         {item.status === 'failed' && (
           <button
-            className="btn-ghost"
-            style={{ fontSize: 12 }}
+            className="btn ghost sm"
             onClick={async () => {
               await window.api.downloads.retry(item.id)
-              show('Retrying…', 'info')
+              show('Reintentando…', 'info')
             }}
-          >Retry</button>
+          >
+            Reintentar
+          </button>
         )}
-        {(item.status === 'queued' || item.status === 'downloading' || item.status === 'fetching_info') && (
+        {(item.status === 'queued' ||
+          item.status === 'downloading' ||
+          item.status === 'fetching_info') && (
           <>
-            <button
-              className="btn-ghost"
-              style={{ fontSize: 12 }}
-              onClick={() => window.api.downloads.pause(item.id)}
-            >Pause</button>
-            <button
-              className="btn-ghost danger"
-              style={{ fontSize: 12 }}
-              onClick={() => window.api.downloads.cancel(item.id)}
-            >Cancel</button>
+            <button className="btn ghost sm" onClick={() => window.api.downloads.pause(item.id)}>
+              Pausar
+            </button>
+            <button className="btn ghost sm" onClick={() => window.api.downloads.cancel(item.id)}>
+              Cancelar
+            </button>
           </>
         )}
         {item.status === 'paused' && (
-          <button
-            className="btn-ghost"
-            style={{ fontSize: 12 }}
-            onClick={() => window.api.downloads.resume(item.id)}
-          >Resume</button>
+          <>
+            <button className="btn ghost sm" onClick={() => window.api.downloads.resume(item.id)}>
+              Seguir
+            </button>
+            <button className="btn ghost sm" onClick={() => window.api.downloads.cancel(item.id)}>
+              Cancelar
+            </button>
+          </>
+        )}
+        {FINISHED.includes(item.status) && (
+          <button className="btn ghost sm" onClick={remove}>
+            Quitar
+          </button>
         )}
       </div>
     </div>
@@ -113,122 +116,118 @@ export default function DownloadsPage() {
   const [url, setUrl] = useState('')
   const [format, setFormat] = useState<'mp3' | 'flac' | 'm4a'>('mp3')
   const [isStarting, setIsStarting] = useState(false)
+  const [error, setError] = useState('')
   const { queue, clearCompleted } = useDownloadStore()
   const { show } = useToast()
 
   const items = Array.from(queue.values()).sort((a, b) => b.addedAt - a.addedAt)
-  const active = items.filter((i) => !['completed', 'failed', 'cancelled'].includes(i.status))
-  const done   = items.filter((i) => ['completed', 'failed', 'cancelled'].includes(i.status))
+  const active = items.filter((i) => !FINISHED.includes(i.status))
+  const done = items.filter((i) => FINISHED.includes(i.status))
 
   const startDownload = async () => {
-    const trimmedUrl = url.trim()
-    if (!trimmedUrl) return
-
-    // Regex for YouTube and YouTube Music URLs (videos and playlists)
-    const ytRegex = /^(https?:\/\/)?(www\.|music\.)?(youtube\.com|youtu\.be)\/(watch\?v=|playlist\?list=|v\/|embed\/)?([a-zA-Z0-9_-]{11}|[a-zA-Z0-9_-]{34})(&.*)?$/
-    
-    if (!ytRegex.test(trimmedUrl)) {
-      show('Please enter a valid YouTube or YouTube Music URL', 'error')
+    const trimmed = url.trim()
+    if (!trimmed) {
+      setError('Pegá un enlace primero.')
       return
     }
-
+    if (!isValidYoutubeUrl(trimmed)) {
+      setError('Ese enlace no es de YouTube ni de YouTube Music.')
+      return
+    }
+    setError('')
     setIsStarting(true)
     try {
-      const result = await window.api.downloads.start({ url: trimmedUrl, format })
+      const result = await window.api.downloads.start({ url: trimmed, format })
       if (result.success) {
         setUrl('')
-        show('Download started!', 'success')
-      } else {
-        show(result.error || 'Failed to start download', 'error')
-      }
+        show('Descarga en cola', 'success')
+      } else setError(result.error || 'No se pudo empezar la descarga.')
     } finally {
       setIsStarting(false)
     }
   }
 
-  const handleClearCompleted = async () => {
-    await window.api.downloads.clearCompleted()
-    clearCompleted()
-  }
-
   return (
     <div>
-      <div className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <h1 className="page-title">Downloads</h1>
-          {active.length > 0 && (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button 
-                className="btn-ghost" 
-                style={{ fontSize: 12, padding: '4px 8px' }}
-                onClick={() => window.api.downloads.pause()}
-              >
-                Pause All
-              </button>
-              {items.some(i => i.status === 'paused') && (
-                <button 
-                  className="btn-ghost" 
-                  style={{ fontSize: 12, padding: '4px 8px' }}
-                  onClick={() => window.api.downloads.resume()}
-                >
-                  Resume All
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        {done.length > 0 && (
-          <button className="btn-ghost" onClick={handleClearCompleted}>Clear Completed</button>
-        )}
-      </div>
-      <div className="page-body">
-        {/* Download Input */}
-        <div className="download-input-bar" style={{ marginBottom: 28 }}>
+      <SectionCover
+        title="Descargas"
+        art={ART.downloads}
+        pills={[
+          [active.length, 'en curso'],
+          [items.length, 'en total']
+        ]}
+      />
+
+      <div className="card dlin">
+        <div className="dlrow">
           <input
-            placeholder="Paste YouTube Music URL — song or playlist…"
+            className="field"
+            placeholder="https://music.youtube.com/watch?v=…"
+            aria-label="Enlace de YouTube o YouTube Music"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && startDownload()}
           />
-          <select
-            value={format}
-            onChange={(e) => setFormat(e.target.value as typeof format)}
-            className="input"
-            style={{ width: 80, padding: '6px 10px' }}
-          >
-            <option value="mp3">MP3</option>
-            <option value="flac">FLAC</option>
-            <option value="m4a">M4A</option>
-          </select>
-          <button className="btn-primary" onClick={startDownload} disabled={isStarting}>
-            {isStarting ? '…' : '↓ Download'}
+          <div className="seg" role="group" aria-label="Formato">
+            {(['mp3', 'flac', 'm4a'] as const).map((f) => (
+              <button key={f} className={format === f ? 'on' : ''} onClick={() => setFormat(f)}>
+                {f.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          <button className="btn" onClick={startDownload} disabled={isStarting}>
+            {isStarting ? <BrailleSpinner /> : null}
+            Descargar
           </button>
         </div>
-
-        {/* Active downloads */}
-        {active.length > 0 && (
-          <>
-            <div className="settings-section__title" style={{ marginBottom: 12 }}>Active</div>
-            {active.map((item) => <DownloadItemCard key={item.id} item={item} />)}
-          </>
-        )}
-
-        {/* Completed */}
-        {done.length > 0 && (
-          <>
-            <div className="settings-section__title" style={{ marginBottom: 12, marginTop: 24 }}>History</div>
-            {done.map((item) => <DownloadItemCard key={item.id} item={item} />)}
-          </>
-        )}
-
-        {items.length === 0 && (
-          <div className="empty-state">
-            <div className="empty-state__icon">⬇️</div>
-            <div className="empty-state__title">No downloads yet</div>
-            <div className="empty-state__desc">Paste a YouTube Music URL above to get started</div>
-          </div>
-        )}
+        {error && <div className="err">{error}</div>}
       </div>
+
+      {items.length === 0 ? (
+        <div className="card empty">
+          <DitherCanvas field={ART.downloads} px={3} fine />
+          <b>Todavía no descargaste nada</b>
+          Pegá un enlace arriba para empezar.
+        </div>
+      ) : (
+        <div className="jobs">
+          {active.length > 0 && (
+            <div className="jobs__head">
+              <span>En curso</span>
+              <span className="bar__actions">
+                <button className="btn ghost sm" onClick={() => window.api.downloads.pause()}>
+                  Pausar todo
+                </button>
+                {items.some((i) => i.status === 'paused') && (
+                  <button className="btn ghost sm" onClick={() => window.api.downloads.resume()}>
+                    Reanudar todo
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
+          {active.map((item) => (
+            <JobCard key={item.id} item={item} />
+          ))}
+          {done.length > 0 && (
+            <div className="jobs__head">
+              <span>Historial</span>
+              <button
+                className="btn ghost sm"
+                onClick={async () => {
+                  await window.api.downloads.clearCompleted()
+                  clearCompleted()
+                }}
+              >
+                Limpiar terminadas
+              </button>
+            </div>
+          )}
+          {done.map((item) => (
+            <JobCard key={item.id} item={item} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 /**
  * Database layer using Node.js built-in `node:sqlite`
  * (available in Node.js 22.5+ / Electron 33+).
- * 
+ *
  * No native compilation needed — works out of the box with Electron 39.
  */
 
@@ -13,7 +13,7 @@ let db: NodeSqliteDB = null
 
 export function initDatabase(dbPath: string): NodeSqliteDB {
   // Use dynamic require so bundler doesn't try to resolve it at build time
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { DatabaseSync } = require('node:sqlite')
 
   db = new DatabaseSync(dbPath)
@@ -35,7 +35,11 @@ export function getDatabase(): NodeSqliteDB {
 
 export function closeDatabase(): void {
   if (db) {
-    try { db.close() } catch { /* ignore */ }
+    try {
+      db.close()
+    } catch {
+      /* ignore */
+    }
     db = null
   }
 }
@@ -71,7 +75,7 @@ function runMigrations(): void {
     migration003_playlist_ytid,
     migration004_downloads_persistence,
     migration005_fts,
-    migration006_liked_songs,
+    migration006_liked_songs
   ]
 
   for (let v = currentVersion; v < migrations.length; v++) {
@@ -86,13 +90,41 @@ function runMigrations(): void {
 
 function migration004_downloads_persistence(d: NodeSqliteDB): void {
   // Add missing columns to download_history to support full state persistence
-  try { d.exec(`ALTER TABLE download_history ADD COLUMN thumbnail TEXT;`) } catch {}
-  try { d.exec(`ALTER TABLE download_history ADD COLUMN uploader TEXT;`) } catch {}
-  try { d.exec(`ALTER TABLE download_history ADD COLUMN playlist_id TEXT;`) } catch {}
-  try { d.exec(`ALTER TABLE download_history ADD COLUMN is_playlist INTEGER DEFAULT 0;`) } catch {}
-  try { d.exec(`ALTER TABLE download_history ADD COLUMN playlist_total INTEGER DEFAULT 0;`) } catch {}
-  try { d.exec(`ALTER TABLE download_history ADD COLUMN playlist_done INTEGER DEFAULT 0;`) } catch {}
-  try { d.exec(`ALTER TABLE download_history ADD COLUMN track_number INTEGER;`) } catch {}
+  try {
+    d.exec(`ALTER TABLE download_history ADD COLUMN thumbnail TEXT;`)
+  } catch {
+    /* column already exists */
+  }
+  try {
+    d.exec(`ALTER TABLE download_history ADD COLUMN uploader TEXT;`)
+  } catch {
+    /* column already exists */
+  }
+  try {
+    d.exec(`ALTER TABLE download_history ADD COLUMN playlist_id TEXT;`)
+  } catch {
+    /* column already exists */
+  }
+  try {
+    d.exec(`ALTER TABLE download_history ADD COLUMN is_playlist INTEGER DEFAULT 0;`)
+  } catch {
+    /* column already exists */
+  }
+  try {
+    d.exec(`ALTER TABLE download_history ADD COLUMN playlist_total INTEGER DEFAULT 0;`)
+  } catch {
+    /* column already exists */
+  }
+  try {
+    d.exec(`ALTER TABLE download_history ADD COLUMN playlist_done INTEGER DEFAULT 0;`)
+  } catch {
+    /* column already exists */
+  }
+  try {
+    d.exec(`ALTER TABLE download_history ADD COLUMN track_number INTEGER;`)
+  } catch {
+    /* column already exists */
+  }
 }
 
 function migration001_schema(d: NodeSqliteDB): void {
@@ -186,7 +218,7 @@ function migration002_indexes(d: NodeSqliteDB): void {
 function migration003_playlist_ytid(d: NodeSqliteDB): void {
   try {
     d.exec(`ALTER TABLE playlists ADD COLUMN yt_id TEXT;`)
-  } catch (e) {
+  } catch {
     // Column might already exist
   }
 }
@@ -225,4 +257,3 @@ function migration006_liked_songs(d: NodeSqliteDB): void {
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   ).run('liked-songs', 'Liked Songs', 'Your favorite songs', null, null, now, now)
 }
-

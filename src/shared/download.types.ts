@@ -18,11 +18,11 @@ export interface DownloadItem {
   thumbnail: string | null
   uploader: string | null
   status: DownloadStatus
-  progress: number        // 0–100
-  speed: string | null    // e.g. "1.5 MiB/s"
-  eta: string | null      // e.g. "00:32"
+  progress: number // 0–100
+  speed: string | null // e.g. "1.5 MiB/s"
+  eta: string | null // e.g. "00:32"
   error: string | null
-  songId: string | null   // populated after completion
+  songId: string | null // populated after completion
   playlistId: string | null
   isPlaylist: boolean
   playlistTotal: number
@@ -57,7 +57,7 @@ export interface DownloadRequest {
   url: string
   format?: 'mp3' | 'flac' | 'm4a'
   quality?: string
-  playlistId?: string  // link to existing playlist
+  playlistId?: string // link to existing playlist
 }
 
 export interface DownloadProgress {

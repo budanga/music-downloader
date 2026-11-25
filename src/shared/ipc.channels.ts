@@ -64,5 +64,5 @@ export const IPC = {
   SYSTEM_GET_DEFAULT_DOWNLOAD_PATH: 'system:get-default-download-path',
   SYSTEM_MINIMIZE_WINDOW: 'system:minimize-window',
   SYSTEM_MAXIMIZE_WINDOW: 'system:maximize-window',
-  SYSTEM_CLOSE_WINDOW: 'system:close-window',
+  SYSTEM_CLOSE_WINDOW: 'system:close-window'
 } as const

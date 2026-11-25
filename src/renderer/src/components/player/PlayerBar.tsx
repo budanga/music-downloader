@@ -1,119 +1,157 @@
+import { useState, type CSSProperties } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { usePlayerStore } from '../../store/playerStore'
+import { useUiStore } from '../../store/uiStore'
 import { formatTime } from '../../hooks/useAudioPlayer'
-import { useCallback, useState } from 'react'
+import { ART, coverFn } from '../motion/art'
+import { AsciiSpectrum, DecryptText, DitherBar, DitherCanvas } from '../motion/Motion'
 import HeartButton from '../ui/HeartButton'
-
-// Inline SVGs
-const PlayIcon  = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-const PauseIcon = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
-const PrevIcon  = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" strokeWidth="2"/></svg>
-const NextIcon  = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" strokeWidth="2"/></svg>
-const ShuffleIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-const RepeatIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>
-const VolumeIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg>
+import {
+  ListIcon,
+  MuteIcon,
+  NextIcon,
+  PauseIcon,
+  PlayIcon,
+  PrevIcon,
+  RepeatIcon,
+  ShuffleIcon,
+  VolumeIcon
+} from '../ui/icons'
 
 export default function PlayerBar() {
-  const {
-    currentSong, isPlaying, isShuffle, repeatMode, volume, isMuted,
-    currentTime, duration, togglePlay, next, previous, toggleShuffle,
-    cycleRepeat, setVolume, toggleMute, seekTo,
-  } = usePlayerStore()
-
-  const [isDragging, setIsDragging] = useState(false)
-  const [dragTime, setDragTime] = useState(0)
-
-  // When dragging starts or continues
-  const handleSeekChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setIsDragging(true)
-    setDragTime(parseFloat(e.target.value))
-  }, [])
-
-  // When user releases the slider
-  const handleSeekCommit = useCallback((e: React.PointerEvent<HTMLInputElement>) => {
-    seekTo(parseFloat(e.currentTarget.value))
-    setIsDragging(false)
-  }, [seekTo])
-
-  const displayTime = isDragging ? dragTime : currentTime
-  const seekPct = duration > 0 ? (displayTime / duration) * 100 : 0
+  const p = usePlayerStore(
+    useShallow((s) => ({
+      currentSong: s.currentSong,
+      isPlaying: s.isPlaying,
+      isShuffle: s.isShuffle,
+      repeatMode: s.repeatMode,
+      volume: s.volume,
+      isMuted: s.isMuted,
+      currentTime: s.currentTime,
+      duration: s.duration,
+      togglePlay: s.togglePlay,
+      next: s.next,
+      previous: s.previous,
+      toggleShuffle: s.toggleShuffle,
+      cycleRepeat: s.cycleRepeat,
+      setVolume: s.setVolume,
+      toggleMute: s.toggleMute,
+      seekTo: s.seekTo
+    }))
+  )
+  const { queueOpen, setQueueOpen } = useUiStore()
+  const [drag, setDrag] = useState<number | null>(null)
+  const vol = p.isMuted ? 0 : p.volume
+  const song = p.currentSong
+  const duration = p.duration || song?.duration || 0
+  const repeatTitle = {
+    none: 'Repetir',
+    all: 'Repitiendo la cola',
+    one: 'Repitiendo esta canción'
+  }[p.repeatMode]
 
   return (
-    <div className="player-bar">
-      {/* Left: current song info */}
-      <div className="player-bar__song">
-        {currentSong?.thumbnail
-          ? <img src={currentSong.thumbnail} alt="" className="player-bar__art" />
-          : <div className="player-bar__art-placeholder">♫</div>
-        }
-        <div className="player-bar__info">
-          <div className="player-bar__title">{currentSong?.title ?? 'Nothing playing'}</div>
-          <div className="player-bar__artist">{currentSong?.artistName ?? ''}</div>
-        </div>
-        {currentSong && (
-          <HeartButton
-            isFavorite={!!currentSong.isFavorite}
-            onClick={() => window.api.library.toggleFavorite(currentSong.id)}
-            size={20}
-          />
-        )}
+    <footer className="player" aria-label="Reproductor">
+      <div className="player__cover">
+        <DitherCanvas field={song ? coverFn(song.albumTitle || song.title) : ART.albums} px={2} />
       </div>
 
-      {/* Center: controls */}
-      <div className="player-controls">
-        <div className="player-controls__buttons">
-          <button className={`ctrl-btn${isShuffle ? ' active' : ''}`} onClick={toggleShuffle} title="Shuffle">
-            <ShuffleIcon />
-          </button>
-          <button className="ctrl-btn" onClick={previous} title="Previous">
-            <PrevIcon />
-          </button>
-          <button className="ctrl-btn ctrl-btn--play" onClick={togglePlay} title="Play/Pause">
-            {isPlaying ? <PauseIcon /> : <PlayIcon />}
-          </button>
-          <button className="ctrl-btn" onClick={next} title="Next">
-            <NextIcon />
-          </button>
-          <button className={`ctrl-btn${repeatMode !== 'none' ? ' active' : ''}`} onClick={cycleRepeat} title="Repeat">
-            <RepeatIcon />
-            {repeatMode === 'one' && <span style={{ fontSize: 9, position: 'absolute', marginTop: 14 }}>1</span>}
-          </button>
+      <div className="pinfo">
+        <div className="row1">
+          <DecryptText className="t" text={song?.title ?? 'Nada sonando'} />
+          {song && (
+            <HeartButton
+              isFavorite={song.isFavorite}
+              onClick={() => window.api.library.toggleFavorite(song.id)}
+            />
+          )}
         </div>
-
-        <div className="seek-row">
-          <span className="seek-row__time">{formatTime(displayTime)}</span>
-          <input
-            type="range"
-            className="range-slider seek"
-            min={0}
-            max={duration || 1}
-            step={0.5}
-            value={displayTime}
-            onChange={handleSeekChange}
-            onPointerUp={handleSeekCommit}
-            style={{ '--val': `${seekPct}%` } as React.CSSProperties}
+        <div className="a">
+          {song
+            ? [song.artistName, song.albumTitle].filter(Boolean).join(' · ')
+            : 'Elegí una canción del archivo'}
+        </div>
+        <div className="prog">
+          <span>{formatTime(drag !== null ? drag * duration : p.currentTime)}</span>
+          <DitherBar
+            value={drag ?? (duration ? p.currentTime / duration : 0)}
+            onSeek={(v) => song && setDrag(v)}
+            onCommit={(v) => {
+              if (song) p.seekTo(v * duration)
+              setDrag(null)
+            }}
+            label="Posición de la canción"
           />
-          <span className="seek-row__time">{formatTime(duration)}</span>
+          <span>{formatTime(duration)}</span>
         </div>
       </div>
 
-      {/* Right: volume */}
-      <div className="player-bar__right">
-        <button className="ctrl-btn" onClick={toggleMute} title="Mute">
-          <VolumeIcon />
+      <div className="ctl">
+        <button
+          className={`ib${p.isShuffle ? ' on' : ''}`}
+          onClick={p.toggleShuffle}
+          title="Aleatorio"
+          aria-label="Aleatorio"
+          aria-pressed={p.isShuffle}
+        >
+          <ShuffleIcon />
         </button>
-        <div className="volume-row">
-          <input
-            type="range"
-            className="range-slider"
-            min={0}
-            max={1}
-            step={0.01}
-            value={isMuted ? 0 : volume}
-            onChange={(e) => setVolume(parseFloat(e.target.value))}
-            style={{ '--val': `${(isMuted ? 0 : volume) * 100}%` } as React.CSSProperties}
-          />
-        </div>
+        <button className="ib" onClick={p.previous} title="Anterior" aria-label="Anterior">
+          <PrevIcon />
+        </button>
+        <button
+          className="play"
+          onClick={p.togglePlay}
+          aria-label={p.isPlaying ? 'Pausar' : 'Reproducir'}
+        >
+          {p.isPlaying ? <PauseIcon /> : <PlayIcon />}
+        </button>
+        <button className="ib" onClick={() => p.next()} title="Siguiente" aria-label="Siguiente">
+          <NextIcon />
+        </button>
+        <button
+          className={`ib${p.repeatMode !== 'none' ? ' on' : ''}`}
+          onClick={p.cycleRepeat}
+          title={repeatTitle}
+          aria-label={repeatTitle}
+        >
+          <RepeatIcon />
+          {p.repeatMode === 'one' && <span className="badge">1</span>}
+        </button>
       </div>
-    </div>
+
+      <AsciiSpectrum className={`spec${p.isPlaying ? '' : ' idle'}`} />
+
+      <div className="vol">
+        <button
+          className={`ib${queueOpen ? ' on' : ''}`}
+          onClick={() => setQueueOpen(!queueOpen)}
+          title="Cola de reproducción"
+          aria-label="Cola de reproducción"
+          aria-pressed={queueOpen}
+        >
+          <ListIcon />
+        </button>
+        <button
+          className="ib"
+          onClick={p.toggleMute}
+          title={p.isMuted ? 'Activar sonido' : 'Silenciar'}
+          aria-label={p.isMuted ? 'Activar sonido' : 'Silenciar'}
+        >
+          {p.isMuted || p.volume === 0 ? <MuteIcon /> : <VolumeIcon />}
+        </button>
+        <input
+          type="range"
+          className="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={vol}
+          onChange={(e) => p.setVolume(Number(e.target.value))}
+          style={{ '--v': `${vol * 100}%` } as CSSProperties}
+          aria-label="Volumen"
+        />
+      </div>
+    </footer>
   )
 }

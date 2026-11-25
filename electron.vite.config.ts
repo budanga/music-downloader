@@ -8,29 +8,22 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
-      alias: {
-        ...sharedAlias,
-        // Map relative ../../../shared paths from inside src/main/services/...
-        '../../../shared': resolve('src/shared'),
-        '../../shared': resolve('src/shared'),
-      },
-    },
+      alias: sharedAlias
+    }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
     resolve: {
-      alias: sharedAlias,
-    },
+      alias: sharedAlias
+    }
   },
   renderer: {
     resolve: {
       alias: {
         '@renderer': resolve('src/renderer/src'),
-        ...sharedAlias,
-        // renderer imports like '../../shared/types'
-        '../../shared': resolve('src/shared'),
-      },
+        ...sharedAlias
+      }
     },
-    plugins: [react()],
-  },
+    plugins: [react()]
+  }
 })

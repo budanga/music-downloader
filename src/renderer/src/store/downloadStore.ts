@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import type { DownloadItem } from '../../shared/download.types'
-import type { DownloadProgress } from '../../shared/download.types'
+import type { DownloadItem } from '../../../shared/download.types'
+import type { DownloadProgress } from '../../../shared/download.types'
 
 interface DownloadStore {
   queue: Map<string, DownloadItem>
@@ -13,7 +13,7 @@ interface DownloadStore {
   clearCompleted: () => void
 }
 
-export const useDownloadStore = create<DownloadStore>((set, get) => ({
+export const useDownloadStore = create<DownloadStore>((set) => ({
   queue: new Map(),
   activeCount: 0,
 
@@ -22,7 +22,8 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
     for (const item of items) map.set(item.id, item)
     set({
       queue: map,
-      activeCount: items.filter((i) => i.status === 'downloading' || i.status === 'converting').length,
+      activeCount: items.filter((i) => i.status === 'downloading' || i.status === 'converting')
+        .length
     })
   },
 
@@ -39,7 +40,7 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
           songId: null,
           playlistId: null,
           error: null,
-          addedAt: Date.now(),
+          addedAt: Date.now()
         }),
         title: progress.title,
         thumbnail: progress.thumbnail,
@@ -49,12 +50,13 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
         speed: progress.speed,
         eta: progress.eta,
         playlistTotal: progress.playlistTotal,
-        playlistDone: progress.playlistDone,
+        playlistDone: progress.playlistDone
       }
       const newMap = new Map(s.queue)
       newMap.set(progress.downloadId, updated)
       const activeCount = Array.from(newMap.values()).filter(
-        (i) => i.status === 'downloading' || i.status === 'converting' || i.status === 'fetching_info'
+        (i) =>
+          i.status === 'downloading' || i.status === 'converting' || i.status === 'fetching_info'
       ).length
       return { queue: newMap, activeCount }
     })
@@ -78,5 +80,5 @@ export const useDownloadStore = create<DownloadStore>((set, get) => ({
       }
       return { queue: newMap }
     })
-  },
+  }
 }))

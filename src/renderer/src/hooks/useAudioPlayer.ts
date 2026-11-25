@@ -1,7 +1,8 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef } from 'react'
 import { Howl } from 'howler'
 import { usePlayerStore } from '../store/playerStore'
-import type { Song } from '../../shared/types'
+import { attachAnalyser } from './audioAnalyser'
+import type { Song } from '../../../shared/types'
 
 /**
  * useAudioPlayer — bridges Howler.js with the Zustand player store.
@@ -10,19 +11,15 @@ import type { Song } from '../../shared/types'
 export function useAudioPlayer() {
   const howlRef = useRef<Howl | null>(null)
   const rafRef = useRef<number | null>(null)
-  const store = usePlayerStore()
-
-  const {
-    currentSong,
-    isPlaying,
-    volume,
-    isMuted,
-    repeatMode,
-    setCurrentTime,
-    setDuration,
-    setIsPlaying,
-    next,
-  } = store
+  // Subscribe field by field: subscribing to the whole store would re-render the app on every time update
+  const currentSong = usePlayerStore((s) => s.currentSong)
+  const playId = usePlayerStore((s) => s.playId)
+  const isPlaying = usePlayerStore((s) => s.isPlaying)
+  const volume = usePlayerStore((s) => s.volume)
+  const isMuted = usePlayerStore((s) => s.isMuted)
+  const seekToTarget = usePlayerStore((s) => s.seekToTarget)
+  const { setCurrentTime, setDuration, setIsPlaying, next, clearSeekToTarget } =
+    usePlayerStore.getState()
 
   // ─── Create/Replace Howl instance when song changes ────────────────────────
   useEffect(() => {
@@ -38,9 +35,28 @@ export function useAudioPlayer() {
     // which causes Howler to reload the entire audio file from position 0.
     const src = `music://library/${encodeURIComponent(currentSong.filePath)}`
 
+    // RAF-based progress tracking
+    const trackProgress = () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current)
+      const step = () => {
+        const howl = howlRef.current
+        if (!howl) return
+        const pos = howl.seek() as number
+        // Throttle store writes to ~4/s instead of one per frame
+        if (
+          typeof pos === 'number' &&
+          Math.abs(pos - usePlayerStore.getState().currentTime) >= 0.25
+        ) {
+          setCurrentTime(pos)
+        }
+        rafRef.current = requestAnimationFrame(step)
+      }
+      rafRef.current = requestAnimationFrame(step)
+    }
+
     const howl = new Howl({
       src: [src],
-      html5: true,   // Use HTML5 audio for proper streaming and seeking with the native file protocol
+      html5: true, // Use HTML5 audio for proper streaming and seeking with the native file protocol
       format: ['mp3', 'flac', 'm4a', 'wav', 'ogg', 'aac'], // explicit formats to prevent parser guessing errors
       volume: isMuted ? 0 : volume,
       onload: () => {
@@ -49,6 +65,10 @@ export function useAudioPlayer() {
       onplay: () => {
         setIsPlaying(true)
         trackProgress()
+        // Feed the spectrum with the real audio
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const node: HTMLAudioElement | undefined = (howl as any)._sounds?.[0]?._node
+        if (node) attachAnalyser(node)
       },
       onpause: () => {
         setIsPlaying(false)
@@ -59,12 +79,12 @@ export function useAudioPlayer() {
         if (rafRef.current) cancelAnimationFrame(rafRef.current)
       },
       onend: () => {
-        if (repeatMode === 'one') {
+        // Read fresh state: repeat mode may have changed since this Howl was created.
+        // Every other track change bumps playId, which re-runs this effect with a fresh Howl.
+        if (usePlayerStore.getState().repeatMode === 'one') {
           howl.seek(0)
           howl.play()
-        } else {
-          next()
-        }
+        } else next(true)
       },
       onloaderror: (_id, err) => {
         console.error('Howl load error:', err)
@@ -74,7 +94,7 @@ export function useAudioPlayer() {
         console.error('Howl play error:', err)
         setIsPlaying(false)
         howl.once('unlock', () => howl.play())
-      },
+      }
     })
 
     howlRef.current = howl
@@ -99,7 +119,7 @@ export function useAudioPlayer() {
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentSong?.id])
+  }, [currentSong?.id, playId])
 
   // ─── Sync play/pause state ─────────────────────────────────────────────────
   useEffect(() => {
@@ -117,24 +137,12 @@ export function useAudioPlayer() {
     howlRef.current?.volume(isMuted ? 0 : volume)
   }, [volume, isMuted])
 
-  // ─── RAF-based progress tracking ──────────────────────────────────────────
-  const trackProgress = useCallback(() => {
-    const step = () => {
-      const howl = howlRef.current
-      if (!howl) return
-      const pos = howl.seek() as number
-      if (typeof pos === 'number') setCurrentTime(pos)
-      rafRef.current = requestAnimationFrame(step)
-    }
-    rafRef.current = requestAnimationFrame(step)
-  }, [setCurrentTime])
-
   // ─── External Seek trigger ────────────────────────────────────────────────
   useEffect(() => {
-    if (store.seekToTarget === null) return
+    if (seekToTarget === null) return
 
-    const target = store.seekToTarget
-    store.clearSeekToTarget()
+    const target = seekToTarget
+    clearSeekToTarget()
     setCurrentTime(target)
 
     const howl = howlRef.current
@@ -148,11 +156,12 @@ export function useAudioPlayer() {
     const audioNode: HTMLAudioElement | undefined = sound?._node
 
     if (audioNode) {
+      // eslint-disable-next-line react-hooks/immutability -- seeking a DOM audio element, not React state
       audioNode.currentTime = target
     } else {
       howl.seek(target)
     }
-  }, [store.seekToTarget, setCurrentTime, store])
+  }, [seekToTarget, setCurrentTime, clearSeekToTarget])
 
   return {}
 }

@@ -16,27 +16,35 @@ const api = {
     getAlbums: () => ipcRenderer.invoke(IPC.LIBRARY_GET_ALBUMS),
     search: (query: string) => ipcRenderer.invoke(IPC.LIBRARY_SEARCH, query),
     getSong: (id: string) => ipcRenderer.invoke(IPC.LIBRARY_GET_SONG, id),
-    updateSong: (id: string, updates: object) => ipcRenderer.invoke(IPC.LIBRARY_UPDATE_SONG, id, updates),
-    deleteSong: (id: string, deleteFile?: boolean) => ipcRenderer.invoke(IPC.LIBRARY_DELETE_SONG, id, deleteFile),
+    updateSong: (id: string, updates: object) =>
+      ipcRenderer.invoke(IPC.LIBRARY_UPDATE_SONG, id, updates),
+    deleteSong: (id: string, deleteFile?: boolean) =>
+      ipcRenderer.invoke(IPC.LIBRARY_DELETE_SONG, id, deleteFile),
     toggleFavorite: (id: string) => ipcRenderer.invoke(IPC.LIBRARY_TOGGLE_FAVORITE, id),
     incrementPlayCount: (id: string) => ipcRenderer.invoke(IPC.LIBRARY_INCREMENT_PLAY_COUNT, id),
-    getRecentlyPlayed: (limit?: number) => ipcRenderer.invoke(IPC.LIBRARY_GET_RECENTLY_PLAYED, limit),
+    getRecentlyPlayed: (limit?: number) =>
+      ipcRenderer.invoke(IPC.LIBRARY_GET_RECENTLY_PLAYED, limit),
     getMostPlayed: (limit?: number) => ipcRenderer.invoke(IPC.LIBRARY_GET_MOST_PLAYED, limit),
     scanFolder: () => ipcRenderer.invoke(IPC.LIBRARY_SCAN_FOLDER),
+    /** Removes artists and albums left without songs */
+    cleanup: () => ipcRenderer.invoke(IPC.LIBRARY_CLEANUP)
   },
 
   // ─── Playlists ────────────────────────────────────────────────────────────
   playlists: {
     list: () => ipcRenderer.invoke(IPC.PLAYLIST_LIST),
     get: (id: string) => ipcRenderer.invoke(IPC.PLAYLIST_GET, id),
-    create: (name: string, description?: string, thumbnail?: string) => ipcRenderer.invoke(IPC.PLAYLIST_CREATE, name, description, thumbnail),
+    create: (name: string, description?: string, thumbnail?: string) =>
+      ipcRenderer.invoke(IPC.PLAYLIST_CREATE, name, description, thumbnail),
     update: (id: string, updates: object) => ipcRenderer.invoke(IPC.PLAYLIST_UPDATE, id, updates),
     delete: (id: string) => ipcRenderer.invoke(IPC.PLAYLIST_DELETE, id),
     getSongs: (playlistId: string) => ipcRenderer.invoke(IPC.PLAYLIST_GET_SONGS, playlistId),
-    addSong: (playlistId: string, songId: string) => ipcRenderer.invoke(IPC.PLAYLIST_ADD_SONG, playlistId, songId),
-    removeSong: (playlistId: string, songId: string) => ipcRenderer.invoke(IPC.PLAYLIST_REMOVE_SONG, playlistId, songId),
-    reorder: (playlistId: string, songId: string, newPosition: number) =>
-      ipcRenderer.invoke(IPC.PLAYLIST_REORDER, playlistId, songId, newPosition),
+    addSong: (playlistId: string, songId: string) =>
+      ipcRenderer.invoke(IPC.PLAYLIST_ADD_SONG, playlistId, songId),
+    removeSong: (playlistId: string, songId: string) =>
+      ipcRenderer.invoke(IPC.PLAYLIST_REMOVE_SONG, playlistId, songId),
+    reorder: (playlistId: string, songId: string, newIndex: number) =>
+      ipcRenderer.invoke(IPC.PLAYLIST_REORDER, playlistId, songId, newIndex)
   },
 
   // ─── Downloads ────────────────────────────────────────────────────────────
@@ -48,14 +56,15 @@ const api = {
     retry: (id: string) => ipcRenderer.invoke(IPC.DOWNLOAD_RETRY, id),
     getQueue: () => ipcRenderer.invoke(IPC.DOWNLOAD_GET_QUEUE),
     clearCompleted: () => ipcRenderer.invoke(IPC.DOWNLOAD_CLEAR_COMPLETED),
-    getHistory: () => ipcRenderer.invoke(IPC.DOWNLOAD_GET_HISTORY),
+    getHistory: () => ipcRenderer.invoke(IPC.DOWNLOAD_GET_HISTORY)
   },
 
   // ─── Settings ─────────────────────────────────────────────────────────────
   settings: {
     getAll: (): Promise<AppSettings> => ipcRenderer.invoke(IPC.SETTINGS_GET_ALL),
     get: (key: keyof AppSettings) => ipcRenderer.invoke(IPC.SETTINGS_GET, key),
-    set: (key: keyof AppSettings, value: unknown) => ipcRenderer.invoke(IPC.SETTINGS_SET, key, value),
+    set: (key: keyof AppSettings, value: unknown) =>
+      ipcRenderer.invoke(IPC.SETTINGS_SET, key, value)
   },
 
   // ─── System ───────────────────────────────────────────────────────────────
@@ -69,7 +78,7 @@ const api = {
     getDefaultDownloadPath: () => ipcRenderer.invoke(IPC.SYSTEM_GET_DEFAULT_DOWNLOAD_PATH),
     minimizeWindow: () => ipcRenderer.invoke(IPC.SYSTEM_MINIMIZE_WINDOW),
     maximizeWindow: () => ipcRenderer.invoke(IPC.SYSTEM_MAXIMIZE_WINDOW),
-    closeWindow: () => ipcRenderer.invoke(IPC.SYSTEM_CLOSE_WINDOW),
+    closeWindow: () => ipcRenderer.invoke(IPC.SYSTEM_CLOSE_WINDOW)
   },
 
   // ─── Events (main → renderer) ─────────────────────────────────────────────
@@ -113,8 +122,8 @@ const api = {
       const handler = (_e: Electron.IpcRendererEvent, id: string) => cb(id)
       ipcRenderer.on(IPC.LIBRARY_PLAYLIST_DELETED, handler)
       return () => ipcRenderer.removeListener(IPC.LIBRARY_PLAYLIST_DELETED, handler)
-    },
-  },
+    }
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

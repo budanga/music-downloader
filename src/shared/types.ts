@@ -82,7 +82,14 @@ export interface AppSettings {
   minimizeToTray: boolean
 }
 
-export type SortField = 'title' | 'artist' | 'album' | 'duration' | 'dateAdded' | 'playCount' | 'year'
+export type SortField =
+  | 'title'
+  | 'artist'
+  | 'album'
+  | 'duration'
+  | 'dateAdded'
+  | 'playCount'
+  | 'year'
 export type SortOrder = 'asc' | 'desc'
 
 export interface LibraryFilters {

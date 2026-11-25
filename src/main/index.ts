@@ -1,6 +1,6 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, protocol, net } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, nativeTheme, protocol } from 'electron'
 import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { electronApp, is } from '@electron-toolkit/utils'
 import { initDatabase } from './services/database/Database'
 import { registerAllIpcHandlers } from './ipc/handlers'
 import { cleanupLibrary } from './services/database/SongRepository'
@@ -11,11 +11,21 @@ import { getAllSettings } from './services/database/SettingsRepository'
 
 // Must be called before app.whenReady()
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, stream: true, standard: true } }
+  {
+    scheme: 'music',
+    privileges: {
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      standard: true,
+      corsEnabled: true // lets the renderer's spectrum analyser read the audio
+    }
+  }
 ])
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let isQuitting = false
 
 // ─── Custom Protocol for Local Audio Files ────────────────────────────────────
 
@@ -25,7 +35,7 @@ function registerMusicProtocol(): void {
   protocol.registerFileProtocol('music', (request, callback) => {
     try {
       const url = new URL(request.url)
-      
+
       // We expect music://library/C:/path/to/file.mp3
       if (url.host !== 'library') {
         callback({ error: -2 }) // FAILED
@@ -33,7 +43,7 @@ function registerMusicProtocol(): void {
       }
 
       let filePath = decodeURIComponent(url.pathname)
-      
+
       // On Windows, the pathname starts with /C:/..., so we remove the leading slash
       if (process.platform === 'win32' && filePath.startsWith('/')) {
         filePath = filePath.slice(1)
@@ -56,16 +66,16 @@ function createWindow(): void {
     minWidth: 900,
     minHeight: 600,
     show: false,
-    frame: false,           // Custom title bar
+    frame: false, // Custom title bar
     titleBarStyle: 'hidden',
-    backgroundColor: '#0f0f13',
-    icon: join(__dirname, '../../resources/icon.png'),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#191714' : '#F5F2EB',
+    icon: join(app.getAppPath(), 'resources/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false,
-    },
+      nodeIntegration: false
+    }
   })
 
   // Show window gracefully after ready
@@ -76,7 +86,7 @@ function createWindow(): void {
   // Minimize to tray if enabled
   mainWindow.on('close', (e) => {
     const settings = getAllSettings()
-    if (settings.minimizeToTray && tray) {
+    if (settings.minimizeToTray && tray && !isQuitting) {
       e.preventDefault()
       mainWindow!.hide()
     }
@@ -101,7 +111,7 @@ function createWindow(): void {
 // ─── System Tray ─────────────────────────────────────────────────────────────
 
 function createTray(): void {
-  const iconPath = join(__dirname, '../../resources/tray-icon.png')
+  const iconPath = join(app.getAppPath(), 'resources/tray-icon.png')
   const icon = fs.existsSync(iconPath)
     ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
     : nativeImage.createEmpty()
@@ -112,7 +122,12 @@ function createTray(): void {
   const contextMenu = Menu.buildFromTemplate([
     { label: 'Show App', click: () => mainWindow?.show() },
     { type: 'separator' },
-    { label: 'Quit', click: () => { app.quit() } },
+    {
+      label: 'Quit',
+      click: () => {
+        app.quit()
+      }
+    }
   ])
 
   tray.setContextMenu(contextMenu)
@@ -122,11 +137,11 @@ function createTray(): void {
 // ─── App Lifecycle ────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.musicdownloader.app')
+  electronApp.setAppUserModelId('com.musicdownloader.app.prod')
 
   // Initialize database
   try {
-    const dbPath = require('path').join(app.getPath('userData'), 'music-library.db')
+    const dbPath = join(app.getPath('userData'), 'music-library.db')
     initDatabase(dbPath)
   } catch (e) {
     console.error('Failed to initialize database:', e)
@@ -145,6 +160,9 @@ app.whenReady().then(() => {
   // Register music protocol
   registerMusicProtocol()
 
+  // The renderer follows prefers-color-scheme, which Electron derives from this
+  nativeTheme.themeSource = getAllSettings().theme
+
   createWindow()
   createTray()
 
@@ -161,6 +179,8 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
+  downloadManager.shutdown()
   closeDatabase()
 })
 
